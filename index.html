@@ -559,8 +559,36 @@
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState('');
             const [searchShake, setSearchShake] = useState(false);
-            const [currentView, setCurrentView] = useState('home'); // 'home', 'upload', 'saved', 'table', 'mindmap'
+            // URL Routing - Get initial view from URL path
+            const getInitialView = () => {
+                const path = window.location.pathname.replace('/sheet-2-mindmap', '').replace(/^\/+|\/+$/g, '');
+                switch (path) {
+                    case 'upload': return 'upload';
+                    case 'saved': return 'saved';
+                    case 'table': return 'table';
+                    case 'mindmap': return 'mindmap';
+                    default: return 'home';
+                }
+            };
+            
+            const [currentView, setCurrentView] = useState(getInitialView()); // 'home', 'upload', 'saved', 'table', 'mindmap'
             const [savedDatasets, setSavedDatasets] = useState(getSavedDatasets());
+            
+            // Navigation function that updates both state and URL
+            const navigateTo = (view) => {
+                setCurrentView(view);
+                const path = view === 'home' ? '/sheet-2-mindmap/' : `/sheet-2-mindmap/${view}`;
+                window.history.pushState({}, '', path);
+            };
+            
+            // Handle browser back/forward buttons
+            useEffect(() => {
+                const handlePopState = () => {
+                    setCurrentView(getInitialView());
+                };
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, []);
             const [githubToken, setGithubToken] = useState(localStorage.getItem('github_token') || '');
             const [isSaving, setIsSaving] = useState(false);
             const [saveMessage, setSaveMessage] = useState('');
@@ -600,7 +628,7 @@
                                 }
                             }
                             
-                            setCurrentView('table');
+                            navigateTo('table');
                             setIsLoading(false);
                         } catch (error) {
                             setError(error.message || 'Failed to parse Excel file');
@@ -669,7 +697,7 @@
                 setRawData(dataset.data);
                 setEditableData(JSON.parse(JSON.stringify(dataset.data)));
                 setCurrentDatasetId(dataset.id);
-                setCurrentView('table');
+                navigateTo('table');
             };
 
             const loadSampleDataset = async (datasetUrl) => {
@@ -705,7 +733,7 @@
                         setCurrentDatasetId('financial-template');
                     }
                     
-                    setCurrentView('table');
+                    navigateTo('table');
                 } catch (err) {
                     setError('Sample dataset not available. Please upload your own Excel file.');
                 } finally {
@@ -801,7 +829,7 @@
                     setMindmapData(result.data);
                     setCountries(result.countries);
                     setSelectedCountries([result.countries[0] || '', result.countries[1] || '']);
-                    setCurrentView('mindmap');
+                                                navigateTo('mindmap');
                 } catch (err) {
                     setError(err.message || 'Failed to generate mindmap');
                 }
@@ -944,7 +972,7 @@
                                     
                                     <div className="space-y-4">
                                         <button
-                                            onClick={() => setCurrentView('upload')}
+                                            onClick={() => navigateTo('upload')}
                                             className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                                         >
                                             <div className="text-center">
@@ -972,7 +1000,7 @@
                                         </h2>
                                         {savedDatasets.length > 0 && (
                                             <button
-                                                onClick={() => setCurrentView('saved')}
+                                                onClick={() => navigateTo('saved')}
                                                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                                             >
                                                 View All →
@@ -1015,7 +1043,7 @@
                                         
                                         {allDatasets.length > 3 && (
                                             <button
-                                                onClick={() => setCurrentView('saved')}
+                                                onClick={() => navigateTo('saved')}
                                                 className="w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
                                             >
                                                 View {allDatasets.length - 3} more datasets →
@@ -1055,7 +1083,7 @@
                                     📁 Upload Excel File
                                 </h1>
                                 <button
-                                    onClick={() => setCurrentView('home')}
+                                    onClick={() => navigateTo('home')}
                                     className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                                 >
                                     ← Back
@@ -1125,7 +1153,7 @@
                                     </p>
                                 </div>
                                 <button
-                                    onClick={() => setCurrentView('home')}
+                                    onClick={() => navigateTo('home')}
                                     className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                                 >
                                     ← Back to Home
@@ -1213,7 +1241,7 @@
                                 </h1>
                                 <div className="flex items-center gap-3">
                                     <button
-                                        onClick={() => setCurrentView('home')}
+                                        onClick={() => navigateTo('home')}
                                         className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm"
                                     >
                                         ← Back to Home
@@ -1450,7 +1478,7 @@
                                 🧠 Interactive Mindmap
                             </h1>
                             <button
-                                onClick={() => setCurrentView('table')}
+                                onClick={() => navigateTo('table')}
                                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                                 title="Back to Table"
                             >
