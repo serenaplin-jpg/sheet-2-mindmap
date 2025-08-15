@@ -636,8 +636,9 @@
                     
                     const fileInfo = await getResponse.json();
                     
-                    // Prepare the updated content
-                    const content = btoa(JSON.stringify(editableData, null, 2));
+                    // Prepare the updated content with proper UTF-8 encoding
+                    const jsonString = JSON.stringify(editableData, null, 2);
+                    const content = btoa(unescape(encodeURIComponent(jsonString)));
                     
                     // Update the file
                     const updateResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
