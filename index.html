@@ -738,8 +738,6 @@
             const loadDatasetsFromGitHub = async () => {
                 console.log('loadDatasetsFromGitHub called - discovering datasets');
                 try {
-                    // Try to discover datasets by checking common patterns
-                    // This is a workaround since we can't reliably fetch repository contents
                     const knownDatasets = [];
                     
                     // Check if we have any datasets in localStorage (temporary storage for current session)
@@ -753,11 +751,79 @@
                         knownDatasets.push(...window.currentSessionDatasets);
                     }
                     
+                    // Try to load known datasets from the data directory
+                    const dataFilesToCheck = [
+                        'gmb-banking-functions.json',
+                        'abc.json'
+                    ];
+                    
+                    for (const filename of dataFilesToCheck) {
+                        try {
+                            const response = await fetch(`./data/${filename}`, {
+                                cache: 'no-cache',
+                                headers: {
+                                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                                }
+                            });
+                            
+                            if (response.ok) {
+                                const jsonData = await response.json();
+                                
+                                // Create dataset metadata
+                                const name = filename.replace('.json', '').replace(/-/g, ' ')
+                                    .replace(/\b\w/g, l => l.toUpperCase());
+                                
+                                // Count functions and extract countries
+                                let functionCount = 0;
+                                let countries = [];
+                                
+                                if (jsonData.length > 1) {
+                                    functionCount = jsonData.length - 1; // Exclude header
+                                    const headers = jsonData[0];
+                                    const excludePatterns = ['name', 'category', '大項', '細項', 'sub-item', 'platform', '平台', '功能名稱'];
+                                    
+                                    countries = headers.filter((header, index) => {
+                                        if (!header) return false;
+                                        const headerLower = header.toLowerCase();
+                                        const isExcluded = excludePatterns.some(pattern => 
+                                            headerLower.includes(pattern.toLowerCase()) || 
+                                            header.includes(pattern)
+                                        );
+                                        return !isExcluded && header.trim() !== '';
+                                    }).map(header => {
+                                        // Clean up country names
+                                        const parenIndex = header.indexOf('(');
+                                        return parenIndex > 0 ? header.substring(0, parenIndex).trim() : header;
+                                    });
+                                }
+                                
+                                const dataset = {
+                                    id: `github_${filename.replace('.json', '')}`,
+                                    name: name,
+                                    description: `Dataset with ${functionCount} functions from GitHub repository`,
+                                    countries: countries,
+                                    functions: functionCount,
+                                    downloadUrl: `./data/${filename}`,
+                                    isBuiltIn: false,
+                                    githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/data/${filename}`
+                                };
+                                
+                                // Check if already exists in knownDatasets
+                                if (!knownDatasets.find(d => d.id === dataset.id)) {
+                                    knownDatasets.push(dataset);
+                                    console.log(`Discovered dataset: ${name} with ${functionCount} functions`);
+                                }
+                            }
+                        } catch (fileErr) {
+                            console.log(`Could not load ${filename}:`, fileErr.message);
+                        }
+                    }
+                    
                     setSavedDatasets(knownDatasets);
                     console.log('Found datasets:', knownDatasets.length);
                     
                 } catch (err) {
-                    console.log('No datasets found, starting fresh');
+                    console.log('Error loading datasets:', err.message);
                     setSavedDatasets([]);
                 }
             };
