@@ -754,6 +754,7 @@
             
             const loadDatasetsFromGitHub = async () => {
                 console.log('loadDatasetsFromGitHub called - discovering datasets');
+                setIsLoading(true);
                 try {
                     const knownDatasets = [];
                     
@@ -768,15 +769,31 @@
                         knownDatasets.push(...window.currentSessionDatasets);
                     }
                     
-                    // Try to load known datasets from the data directory
+                    // Try to discover all JSON files in the data directory
                     const dataFilesToCheck = [
-                        'gmb-banking-functions.json'
+                        'gmb-banking-functions.json',
+                        'abc.json',
+                        'abc1.json'
+                        // Add more as needed
                     ];
+                    
+                    // Try to auto-discover additional JSON files by checking for common patterns
+                    const additionalFiles = [];
+                    for (let i = 1; i <= 10; i++) {
+                        additionalFiles.push(`dataset${i}.json`);
+                        additionalFiles.push(`data${i}.json`);
+                        additionalFiles.push(`functions${i}.json`);
+                    }
+                    dataFilesToCheck.push(...additionalFiles);
+                    
+                    console.log('Checking for datasets:', dataFilesToCheck);
                     
                     for (const filename of dataFilesToCheck) {
                         try {
                             // Force refresh with multiple cache-busting parameters
                             const cacheBuster = `v=${Date.now()}&r=${Math.random()}&cb=${performance.now()}`;
+                            console.log(`Attempting to load: ./data/${filename}`);
+                            
                             const response = await fetch(`./data/${filename}?${cacheBuster}`, {
                                 cache: 'no-cache',
                                 headers: {
@@ -786,8 +803,11 @@
                                 }
                             });
                             
+                            console.log(`Response for ${filename}:`, response.status);
+                            
                             if (response.ok) {
                                 const jsonData = await response.json();
+                                console.log(`Successfully loaded ${filename}:`, jsonData.length, 'rows');
                                 
                                 // Create dataset metadata
                                 const name = filename.replace('.json', '').replace(/-/g, ' ')
@@ -836,19 +856,24 @@
                                 } else {
                                     knownDatasets.push(dataset); // Add new
                                 }
-                                console.log(`Discovered dataset: ${name} with ${functionCount} functions`);
+                                console.log(`Added dataset: ${name} with ${functionCount} functions`);
                             }
                         } catch (fileErr) {
-                            console.log(`Could not load ${filename}:`, fileErr.message);
+                            // Silently ignore files that don't exist
+                            if (!fileErr.message.includes('404')) {
+                                console.log(`Error loading ${filename}:`, fileErr.message);
+                            }
                         }
                     }
                     
                     setSavedDatasets(knownDatasets);
-                    console.log('Found datasets:', knownDatasets.length);
+                    console.log('Total datasets found:', knownDatasets.length);
                     
                 } catch (err) {
                     console.log('Error loading datasets:', err.message);
                     setSavedDatasets([]);
+                } finally {
+                    setIsLoading(false);
                 }
             };
             
@@ -1221,11 +1246,15 @@
                                         </h2>
                                         <div className="flex items-center gap-2">
                                             <button
-                                                onClick={loadDatasetsFromGitHub}
-                                                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                                onClick={async () => {
+                                                    console.log('Home refresh button clicked');
+                                                    await loadDatasetsFromGitHub();
+                                                }}
+                                                disabled={isLoading}
+                                                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                                                 title="Refresh datasets from GitHub"
                                             >
-                                                🔄 Refresh
+                                                {isLoading ? 'Refreshing...' : '🔄 Refresh'}
                                             </button>
                                             {savedDatasets.length > 0 && (
                                                 <button
@@ -1384,11 +1413,15 @@
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <button
-                                        onClick={loadDatasetsFromGitHub}
-                                        className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        onClick={async () => {
+                                            console.log('Saved page refresh button clicked');
+                                            await loadDatasetsFromGitHub();
+                                        }}
+                                        disabled={isLoading}
+                                        className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                                         title="Refresh datasets from GitHub"
                                     >
-                                        🔄 Refresh from GitHub
+                                        {isLoading ? 'Refreshing...' : '🔄 Refresh from GitHub'}
                                     </button>
                                     <button
                                         onClick={() => navigateTo('home')}
@@ -1669,32 +1702,50 @@
                                     {currentDatasetId.startsWith('github_') && (
                                         <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                                             <button
-                                                onClick={() => {
-                                                    // Find the current dataset and reload it
-                                                    const dataset = [...savedDatasets].find(d => d.id === currentDatasetId);
-                                                    if (dataset) {
-                                                        loadSavedDataset(dataset);
-                                                    } else if (currentDatasetId.startsWith('github_')) {
-                                                        // Try to reload from GitHub
-                                                        loadDatasetsFromGitHub().then(() => {
-                                                            const refreshedDataset = savedDatasets.find(d => d.id === currentDatasetId);
-                                                            if (refreshedDataset) {
-                                                                loadSavedDataset(refreshedDataset);
-                                                            } else {
-                                                                setError('Cannot refresh: dataset not found on GitHub.');
-                                                            }
-                                                        });
-                                                    } else {
-                                                        setError('Cannot refresh: this is a temporary dataset. Save it to GitHub first.');
+                                                onClick={async () => {
+                                                    console.log('Refresh button clicked');
+                                                    setIsLoading(true);
+                                                    setError('');
+                                                    
+                                                    try {
+                                                        // First reload all datasets from GitHub
+                                                        await loadDatasetsFromGitHub();
+                                                        
+                                                        // Then find and reload the current dataset
+                                                        const refreshedDataset = savedDatasets.find(d => d.id === currentDatasetId);
+                                                        if (refreshedDataset) {
+                                                            console.log('Reloading current dataset:', refreshedDataset.name);
+                                                            await loadSavedDataset(refreshedDataset);
+                                                        } else {
+                                                            setError('Cannot refresh: dataset not found after reload.');
+                                                        }
+                                                    } catch (err) {
+                                                        console.error('Refresh error:', err);
+                                                        setError(`Refresh failed: ${err.message}`);
+                                                    } finally {
+                                                        setIsLoading(false);
                                                     }
                                                 }}
-                                                className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                                disabled={isLoading}
+                                                className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:opacity-50"
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
-                                                    <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                                                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-                                                </svg>
-                                                Refresh Data from GitHub
+                                                {isLoading ? (
+                                                    <>
+                                                        <svg className="animate-spin mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                        Refreshing...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
+                                                            <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                                                            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                                                        </svg>
+                                                        Refresh Data from GitHub
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                     )}
