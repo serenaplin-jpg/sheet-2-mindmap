@@ -122,46 +122,11 @@
         ];
 
         // Get saved datasets from localStorage
-        const getSavedDatasets = () => {
-            try {
-                const saved = localStorage.getItem('saved_datasets');
-                return saved ? JSON.parse(saved) : [];
-            } catch (e) {
-                return [];
-            }
-        };
 
-        // Save dataset to localStorage
-        const saveDatasetToStorage = (dataset) => {
-            try {
-                const saved = getSavedDatasets();
-                const existingIndex = saved.findIndex(d => d.id === dataset.id);
-                
-                if (existingIndex >= 0) {
-                    saved[existingIndex] = dataset;
-                } else {
-                    saved.push(dataset);
-                }
-                
-                localStorage.setItem('saved_datasets', JSON.stringify(saved));
-                return true;
-            } catch (e) {
-                console.error('Failed to save dataset:', e);
-                return false;
-            }
-        };
 
-        // Delete saved dataset
-        const deleteSavedDataset = (datasetId) => {
-            try {
-                const saved = getSavedDatasets();
-                const filtered = saved.filter(d => d.id !== datasetId);
-                localStorage.setItem('saved_datasets', JSON.stringify(filtered));
-                return true;
-            } catch (e) {
-                return false;
-            }
-        };
+
+
+
 
         // Excel parser utility
         const parseExcelToMindmap = (file) => {
@@ -572,7 +537,7 @@
             };
             
             const [currentView, setCurrentView] = useState(getInitialView()); // 'home', 'upload', 'saved', 'table', 'mindmap'
-            const [savedDatasets, setSavedDatasets] = useState(getSavedDatasets());
+            const [savedDatasets, setSavedDatasets] = useState([]);
             
             // Navigation function that updates both state and URL
             const navigateTo = (view) => {
@@ -688,10 +653,7 @@
                     isBuiltIn: false
                 };
                 
-                if (saveDatasetToStorage(dataset)) {
-                    setSavedDatasets(getSavedDatasets());
-                    return dataset;
-                }
+                return dataset;
                 return null;
             };
             
@@ -878,22 +840,7 @@
                     
                     setSaveMessage(`✅ Successfully created new dataset "${datasetName}" on GitHub! It will be available in a few minutes.`);
                     
-                    // Save to localStorage as well
-                    const newDataset = {
-                        id: `github_${safeName}`,
-                        name: datasetName,
-                        description: `Dataset saved to GitHub with ${editableData.length - 1} functions`,
-                        countries: getCountryColumns().map(col => col.header),
-                        functions: editableData.length - 1,
-                        data: editableData,
-                        uploadDate: new Date().toISOString(),
-                        isBuiltIn: false,
-                        githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/${filePath}`
-                    };
-                    
-                    if (saveDatasetToStorage(newDataset)) {
-                        setSavedDatasets(getSavedDatasets());
-                    }
+
                     
                 } catch (err) {
                     setError(`Failed to create new dataset on GitHub: ${err.message}`);
@@ -1269,8 +1216,7 @@
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         if (confirm(`Delete "${dataset.name}"?`)) {
-                                                            deleteSavedDataset(dataset.id);
-                                                            setSavedDatasets(getSavedDatasets());
+                                                            // Dataset deletion removed - datasets are now GitHub-only
                                                         }
                                                     }}
                                                     className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 ml-2"
