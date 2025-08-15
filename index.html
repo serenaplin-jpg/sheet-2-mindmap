@@ -109,17 +109,7 @@
         const { useState, useEffect, useRef, useCallback } = React;
 
         // Built-in datasets configuration
-        const BUILTIN_DATASETS = [
-            {
-                id: 'gmb-banking',
-                name: 'GMB Banking Functions',
-                description: 'Complete banking feature comparison across Asian markets',
-                countries: ['台灣', '大陸', '香港', '柬埔寨', '新加坡', '越南', '菲律賓', '馬來西亞', '緬甸', '寮國'],
-                functions: 105,
-                url: './data/gmb-banking-functions.json',
-                isBuiltIn: true
-            }
-        ];
+        const BUILTIN_DATASETS = [];
 
         // Get saved datasets from localStorage
 
@@ -677,7 +667,13 @@
             };
             
             const loadSavedDataset = async (dataset) => {
-                if (dataset.downloadUrl) {
+                if (dataset.data) {
+                    // Dataset already has data loaded
+                    setRawData(dataset.data);
+                    setEditableData(JSON.parse(JSON.stringify(dataset.data)));
+                    setCurrentDatasetId(dataset.id);
+                    navigateTo('table');
+                } else if (dataset.downloadUrl) {
                     // This is a GitHub dataset, load it from the URL
                     try {
                         setIsLoading(true);
@@ -703,11 +699,7 @@
                         setIsLoading(false);
                     }
                 } else {
-                    // This is a local dataset
-                    setRawData(dataset.data);
-                    setEditableData(JSON.parse(JSON.stringify(dataset.data)));
-                    setCurrentDatasetId(dataset.id);
-                    navigateTo('table');
+                    setError('Dataset data not available');
                 }
             };
 
@@ -815,7 +807,7 @@
                                     description: `Dataset with ${functionCount} functions from GitHub repository`,
                                     countries: countries,
                                     functions: functionCount,
-                                    downloadUrl: `./data/${filename}`,
+                                    data: jsonData, // Store the actual data instead of a URL
                                     isBuiltIn: false,
                                     githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/data/${filename}`
                                 };
@@ -994,8 +986,7 @@
                         data: editableData,
                         uploadDate: new Date().toISOString(),
                         isBuiltIn: false,
-                        githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/${filePath}`,
-                        downloadUrl: `https://raw.githubusercontent.com/serenaplin-jpg/sheet-2-mindmap/main/${filePath}`
+                        githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/${filePath}`
                     };
                     
                     // Add to session storage
@@ -1224,7 +1215,7 @@
                                     <div className="space-y-3 max-h-80 overflow-y-auto">
                                         {allDatasets.slice(0, 3).map(dataset => (
                                             <div key={dataset.id} className="dataset-card border border-gray-200 dark:border-gray-600 rounded-lg p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700" 
-                                                 onClick={() => dataset.isBuiltIn ? loadSampleDataset(dataset.url) : loadSavedDataset(dataset)}>
+                                                 onClick={() => loadSavedDataset(dataset)}>
                                                 <div className="flex items-start justify-between">
                                                     <div className="flex-1">
                                                         <div className="flex items-center">
@@ -1429,7 +1420,7 @@
                                             )}
                                             
                                             <button
-                                                onClick={() => dataset.isBuiltIn ? loadSampleDataset(dataset.url) : loadSavedDataset(dataset)}
+                                                onClick={() => loadSavedDataset(dataset)}
                                                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                             >
                                                 Open Dataset →
