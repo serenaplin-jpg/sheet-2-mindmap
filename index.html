@@ -663,11 +663,39 @@
                 return null;
             };
             
-            const loadSavedDataset = (dataset) => {
-                setRawData(dataset.data);
-                setEditableData(JSON.parse(JSON.stringify(dataset.data)));
-                setCurrentDatasetId(dataset.id);
-                navigateTo('table');
+            const loadSavedDataset = async (dataset) => {
+                if (dataset.downloadUrl) {
+                    // This is a GitHub dataset, load it from the URL
+                    try {
+                        setIsLoading(true);
+                        const response = await fetch(dataset.downloadUrl, {
+                            cache: 'no-cache',
+                            headers: {
+                                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to load dataset from GitHub');
+                        }
+                        
+                        const data = await response.json();
+                        setRawData(data);
+                        setEditableData(JSON.parse(JSON.stringify(data)));
+                        setCurrentDatasetId(dataset.id);
+                        navigateTo('table');
+                    } catch (err) {
+                        setError(`Failed to load dataset: ${err.message}`);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                } else {
+                    // This is a local dataset
+                    setRawData(dataset.data);
+                    setEditableData(JSON.parse(JSON.stringify(dataset.data)));
+                    setCurrentDatasetId(dataset.id);
+                    navigateTo('table');
+                }
             };
 
             const loadSampleDataset = async (datasetUrl) => {
@@ -708,17 +736,28 @@
             };
             
             const loadDatasetsFromGitHub = async () => {
-                console.log('loadDatasetsFromGitHub called - setting empty array');
+                console.log('loadDatasetsFromGitHub called - discovering datasets');
                 try {
-                    // For now, we'll start with an empty list since we can't reliably fetch repository contents
-                    // Users can still save new datasets, and they'll appear in the list
-                    setSavedDatasets([]);
+                    // Try to discover datasets by checking common patterns
+                    // This is a workaround since we can't reliably fetch repository contents
+                    const knownDatasets = [];
                     
-                    // TODO: In the future, we could implement a more robust way to discover datasets
-                    // such as maintaining a dataset index file or using GitHub's GraphQL API with authentication
+                    // Check if we have any datasets in localStorage (temporary storage for current session)
+                    const sessionDatasets = JSON.parse(localStorage.getItem('session_datasets') || '[]');
+                    if (sessionDatasets.length > 0) {
+                        knownDatasets.push(...sessionDatasets);
+                    }
+                    
+                    // Add any datasets that were created in this session
+                    if (window.currentSessionDatasets) {
+                        knownDatasets.push(...window.currentSessionDatasets);
+                    }
+                    
+                    setSavedDatasets(knownDatasets);
+                    console.log('Found datasets:', knownDatasets.length);
                     
                 } catch (err) {
-                    // No error handling needed since we're not making API calls
+                    console.log('No datasets found, starting fresh');
                     setSavedDatasets([]);
                 }
             };
@@ -862,7 +901,29 @@
                     
                     setSaveMessage(`✅ Successfully created new dataset "${datasetName}" on GitHub! It will be available in a few minutes.`);
                     
-                    // Note: The new dataset is now saved to GitHub and can be accessed directly via the URL
+                    // Store the new dataset in session storage so it appears in the list
+                    const newDataset = {
+                        id: `github_${safeName}`,
+                        name: datasetName,
+                        description: `Dataset saved to GitHub with ${editableData.length - 1} functions`,
+                        countries: getCountryColumns().map(col => col.header),
+                        functions: editableData.length - 1,
+                        data: editableData,
+                        uploadDate: new Date().toISOString(),
+                        isBuiltIn: false,
+                        githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/${filePath}`,
+                        downloadUrl: `https://raw.githubusercontent.com/serenaplin-jpg/sheet-2-mindmap/main/${filePath}`
+                    };
+                    
+                    // Add to session storage
+                    const sessionDatasets = JSON.parse(localStorage.getItem('session_datasets') || '[]');
+                    sessionDatasets.push(newDataset);
+                    localStorage.setItem('session_datasets', JSON.stringify(sessionDatasets));
+                    
+                    // Update the current savedDatasets state
+                    setSavedDatasets(prev => [...prev, newDataset]);
+                    
+                    // Note: The new dataset is now saved to GitHub and appears in your list
                     
 
                     
