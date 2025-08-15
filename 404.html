@@ -130,8 +130,21 @@
     </div>
 
     <script>
-        // Add some interactive elements
+        // SPA routing fallback - redirect to index.html with hash routing
         document.addEventListener('DOMContentLoaded', function() {
+            // Check if this looks like an SPA route
+            const path = window.location.pathname;
+            const isSPARoute = path.includes('/sheet-2-mindmap/') && 
+                              (path.includes('/upload') || path.includes('/saved') || 
+                               path.includes('/table') || path.includes('/mindmap'));
+            
+            if (isSPARoute) {
+                // Extract the route and redirect to index.html with hash
+                const route = path.split('/').pop();
+                window.location.href = `/sheet-2-mindmap/#${route}`;
+                return;
+            }
+            
             // Add click effect to buttons
             const buttons = document.querySelectorAll('a, button');
             buttons.forEach(button => {
@@ -159,7 +172,7 @@
             // Auto-redirect after 30 seconds (optional)
             setTimeout(() => {
                 if (confirm('Would you like to be redirected to the home page?')) {
-                    window.location.href = '/';
+                    window.location.href = '/sheet-2-mindmap/';
                 }
             }, 30000);
         });

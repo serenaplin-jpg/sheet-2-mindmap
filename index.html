@@ -526,6 +526,19 @@
             const [searchShake, setSearchShake] = useState(false);
             // URL Routing - Get initial view from URL path
             const getInitialView = () => {
+                // Check for hash routing first (from 404 redirects)
+                const hash = window.location.hash.replace('#', '');
+                if (hash) {
+                    switch (hash) {
+                        case 'upload': return 'upload';
+                        case 'saved': return 'saved';
+                        case 'table': return 'table';
+                        case 'mindmap': return 'mindmap';
+                        default: return 'home';
+                    }
+                }
+                
+                // Fallback to path-based routing
                 const path = window.location.pathname.replace('/sheet-2-mindmap', '').replace(/^\/+|\/+$/g, '');
                 switch (path) {
                     case 'upload': return 'upload';
@@ -753,8 +766,7 @@
                     
                     // Try to load known datasets from the data directory
                     const dataFilesToCheck = [
-                        'gmb-banking-functions.json',
-                        'abc.json'
+                        'gmb-banking-functions.json'
                     ];
                     
                     for (const filename of dataFilesToCheck) {
@@ -835,7 +847,7 @@
                 }
                 
                 if (!currentDatasetId) {
-                    setError('Can only save changes to sample datasets loaded from GitHub.');
+                    setError('Please load a dataset first before saving changes.');
                     return;
                 }
                 
@@ -844,13 +856,18 @@
                 setError('');
                 
                 try {
-                    // Only allow saving to GMB banking dataset
-                    if (currentDatasetId !== 'gmb-banking') {
-                        setError('Can only save changes to the GMB Banking Functions dataset.');
+                    // Determine the correct file path based on dataset ID
+                    let filePath;
+                    if (currentDatasetId === 'gmb-banking') {
+                        filePath = 'data/gmb-banking-functions.json';
+                    } else if (currentDatasetId.startsWith('github_')) {
+                        // Extract filename from github dataset ID
+                        const filename = currentDatasetId.replace('github_', '') + '.json';
+                        filePath = `data/${filename}`;
+                    } else {
+                        setError('This dataset cannot be saved to GitHub. Only GitHub-hosted datasets can be updated.');
                         return;
                     }
-                    
-                    const filePath = 'data/gmb-banking-functions.json';
                     
                     // Get current file to get SHA
                     const getResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
@@ -879,7 +896,7 @@
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            message: `Update GMB Banking Functions data`,
+                            message: `Update ${filePath.split('/').pop().replace('.json', '').replace(/-/g, ' ')} data`,
                             content: content,
                             sha: fileInfo.sha,
                             branch: 'main'
