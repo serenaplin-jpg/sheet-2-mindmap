@@ -108,25 +108,60 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
-        // Sample datasets configuration
-        const SAMPLE_DATASETS = [
+        // Built-in datasets configuration
+        const BUILTIN_DATASETS = [
             {
                 id: 'gmb-banking',
                 name: 'GMB Banking Functions',
                 description: 'Complete banking feature comparison across Asian markets',
                 countries: ['台灣', '大陸', '香港', '柬埔寨', '新加坡', '越南', '菲律賓', '馬來西亞', '緬甸', '寮國'],
                 functions: 105,
-                url: './data/gmb-banking-functions.json'
-            },
-            {
-                id: 'financial-template',
-                name: 'Financial Services Template',
-                description: 'Template for financial institutions feature comparison',
-                countries: ['Country A', 'Country B', 'Country C', 'Country D'],
-                functions: 25,
-                url: './data/financial-services-template.json'
+                url: './data/gmb-banking-functions.json',
+                isBuiltIn: true
             }
         ];
+
+        // Get saved datasets from localStorage
+        const getSavedDatasets = () => {
+            try {
+                const saved = localStorage.getItem('saved_datasets');
+                return saved ? JSON.parse(saved) : [];
+            } catch (e) {
+                return [];
+            }
+        };
+
+        // Save dataset to localStorage
+        const saveDatasetToStorage = (dataset) => {
+            try {
+                const saved = getSavedDatasets();
+                const existingIndex = saved.findIndex(d => d.id === dataset.id);
+                
+                if (existingIndex >= 0) {
+                    saved[existingIndex] = dataset;
+                } else {
+                    saved.push(dataset);
+                }
+                
+                localStorage.setItem('saved_datasets', JSON.stringify(saved));
+                return true;
+            } catch (e) {
+                console.error('Failed to save dataset:', e);
+                return false;
+            }
+        };
+
+        // Delete saved dataset
+        const deleteSavedDataset = (datasetId) => {
+            try {
+                const saved = getSavedDatasets();
+                const filtered = saved.filter(d => d.id !== datasetId);
+                localStorage.setItem('saved_datasets', JSON.stringify(filtered));
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
 
         // Excel parser utility
         const parseExcelToMindmap = (file) => {
@@ -524,7 +559,8 @@
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState('');
             const [searchShake, setSearchShake] = useState(false);
-            const [currentView, setCurrentView] = useState('upload'); // 'upload', 'table', 'mindmap'
+            const [currentView, setCurrentView] = useState('home'); // 'home', 'upload', 'saved', 'table', 'mindmap'
+            const [savedDatasets, setSavedDatasets] = useState(getSavedDatasets());
             const [githubToken, setGithubToken] = useState(localStorage.getItem('github_token') || '');
             const [isSaving, setIsSaving] = useState(false);
             const [saveMessage, setSaveMessage] = useState('');
@@ -554,6 +590,16 @@
                             
                             setRawData(jsonData);
                             setEditableData(JSON.parse(JSON.stringify(jsonData))); // Deep copy
+                            
+                            // Ask if user wants to save this dataset
+                            const shouldSave = confirm(`Would you like to save "${file.name}" for future use?`);
+                            if (shouldSave) {
+                                const savedDataset = saveUploadedDataset(jsonData, file.name);
+                                if (savedDataset) {
+                                    setCurrentDatasetId(savedDataset.id);
+                                }
+                            }
+                            
                             setCurrentView('table');
                             setIsLoading(false);
                         } catch (error) {
@@ -572,6 +618,60 @@
                 }
             };
             
+            const saveUploadedDataset = (data, filename) => {
+                const datasetId = `uploaded_${Date.now()}`;
+                const name = filename.replace(/\.[^/.]+$/, ''); // Remove extension
+                
+                // Count functions and countries
+                const functionCount = data.length - 1; // Exclude header
+                const countries = [];
+                if (data.length > 0) {
+                    const headers = data[0];
+                    const excludePatterns = ['name', 'category', '大項', '細項', 'sub-item', 'platform', '平台', '功能名稱'];
+                    headers.forEach((header, index) => {
+                        if (header) {
+                            const headerLower = header.toLowerCase();
+                            const isExcluded = excludePatterns.some(pattern => 
+                                headerLower.includes(pattern.toLowerCase()) || 
+                                header.includes(pattern)
+                            );
+                            if (!isExcluded && header.trim() !== '') {
+                                let countryName = header;
+                                const parenIndex = countryName.indexOf('(');
+                                if (parenIndex > 0) {
+                                    countryName = countryName.substring(0, parenIndex).trim();
+                                }
+                                countries.push(countryName);
+                            }
+                        }
+                    });
+                }
+                
+                const dataset = {
+                    id: datasetId,
+                    name: name,
+                    description: `Uploaded dataset with ${functionCount} functions`,
+                    countries: countries.slice(0, 10),
+                    functions: functionCount,
+                    data: data,
+                    uploadDate: new Date().toISOString(),
+                    isBuiltIn: false
+                };
+                
+                if (saveDatasetToStorage(dataset)) {
+                    setSavedDatasets(getSavedDatasets());
+                    return dataset;
+                }
+                return null;
+            };
+            
+            const loadSavedDataset = (dataset) => {
+                setRawData(dataset.data);
+                setEditableData(JSON.parse(JSON.stringify(dataset.data)));
+                setCurrentDatasetId(dataset.id);
+                setCurrentView('table');
+            };
+
             const loadSampleDataset = async (datasetUrl) => {
                 setIsLoading(true);
                 setError('');
@@ -816,8 +916,10 @@
                 setEditableData(newData);
             };
             
-            // Upload View
-            if (currentView === 'upload') {
+            // Home View
+            if (currentView === 'home') {
+                const allDatasets = [...BUILTIN_DATASETS, ...savedDatasets];
+                
                 return (
                     <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
                         <div className="max-w-4xl w-full p-6">
@@ -837,77 +939,91 @@
                                 {/* Upload Section */}
                                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
                                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                                        📁 Upload Your Excel File
+                                        📁 Upload New Excel File
                                     </h2>
                                     
-                                    <div
-                                        className="file-upload-area mb-4"
-                                        onDrop={handleDrop}
-                                        onDragOver={handleDragOver}
-                                    >
-                                        <input
-                                            type="file"
-                                            accept=".xlsx,.xls"
-                                            onChange={(e) => handleFileUpload(e.target.files[0])}
-                                            className="hidden"
-                                            id="file-input"
-                                        />
-                                        <label htmlFor="file-input" className="cursor-pointer">
-                                            <div className="text-gray-600 dark:text-gray-400">
-                                                <svg className="mx-auto h-12 w-12 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <div className="space-y-4">
+                                        <button
+                                            onClick={() => setCurrentView('upload')}
+                                            className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                        >
+                                            <div className="text-center">
+                                                <svg className="mx-auto h-12 w-12 text-blue-500 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                                                     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                                 </svg>
-                                                <p className="text-sm font-medium">Drop Excel file here or click to browse</p>
-                                                <p className="text-xs mt-1">Supports .xlsx and .xls files</p>
+                                                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Click to upload Excel file</p>
+                                                <p className="text-xs text-gray-500 mt-1">Supports .xlsx and .xls files</p>
                                             </div>
-                                        </label>
-                                    </div>
-                                    
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                        <p>✓ Your data stays private - everything runs in your browser</p>
-                                        <p>✓ No file size limits</p>
-                                        <p>✓ Supports multiple languages</p>
+                                        </button>
+                                        
+                                        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                                            <p>✓ Your data stays private - everything runs in your browser</p>
+                                            <p>✓ Option to save datasets for future use</p>
+                                            <p>✓ Supports multiple languages and Unicode</p>
+                                        </div>
                                     </div>
                                 </div>
                                 
-                                {/* Sample Datasets */}
+                                {/* Saved Datasets */}
                                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                                        🎯 Try Sample Datasets
-                                    </h2>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                            💾 Saved Datasets
+                                        </h2>
+                                        {savedDatasets.length > 0 && (
+                                            <button
+                                                onClick={() => setCurrentView('saved')}
+                                                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                            >
+                                                View All →
+                                            </button>
+                                        )}
+                                    </div>
                                     
-                                    <div className="space-y-3">
-                                        {SAMPLE_DATASETS.map(dataset => (
-                                            <div key={dataset.id} className="dataset-card border border-gray-200 dark:border-gray-600 rounded-lg p-4 cursor-pointer" onClick={() => loadSampleDataset(dataset.url)}>
-                                                <h3 className="font-medium text-gray-900 dark:text-white">{dataset.name}</h3>
-                                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{dataset.description}</p>
-                                                <div className="flex items-center justify-between mt-2">
-                                                    <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
-                                                        <span>{dataset.functions} functions</span>
-                                                        <span>{dataset.countries.length} countries</span>
+                                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                                        {allDatasets.slice(0, 3).map(dataset => (
+                                            <div key={dataset.id} className="dataset-card border border-gray-200 dark:border-gray-600 rounded-lg p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700" 
+                                                 onClick={() => dataset.isBuiltIn ? loadSampleDataset(dataset.url) : loadSavedDataset(dataset)}>
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center">
+                                                            <h3 className="font-medium text-gray-900 dark:text-white">{dataset.name}</h3>
+                                                            {dataset.isBuiltIn && (
+                                                                <span className="ml-2 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full">
+                                                                    Built-in
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{dataset.description}</p>
+                                                        <div className="flex items-center justify-between mt-2">
+                                                            <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                                                                <span>{dataset.functions} functions</span>
+                                                                <span>{dataset.countries.length} countries</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <button className="text-blue-600 dark:text-blue-400 text-sm hover:text-blue-800 dark:hover:text-blue-300">
-                                                        Try it →
-                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
-                                    </div>
-                                    
-                                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                        <p className="text-sm text-blue-800 dark:text-blue-200">
-                                            💡 <strong>Tip:</strong> Sample datasets help you understand the expected format before uploading your own data.
-                                        </p>
+                                        
+                                        {allDatasets.length === 0 && (
+                                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                                <p>No saved datasets yet.</p>
+                                                <p className="text-sm mt-1">Upload an Excel file to get started!</p>
+                                            </div>
+                                        )}
+                                        
+                                        {allDatasets.length > 3 && (
+                                            <button
+                                                onClick={() => setCurrentView('saved')}
+                                                className="w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                            >
+                                                View {allDatasets.length - 3} more datasets →
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                            
-                            {isLoading && (
-                                <div className="text-center py-8">
-                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                                    <p className="text-sm mt-4">Processing your data...</p>
-                                </div>
-                            )}
                             
                             {error && (
                                 <div className="mt-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
@@ -922,7 +1038,163 @@
                             
                             {/* Footer */}
                             <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                                <p>Made with ❤️ for data visualization • <a href="https://github.com/yourusername/excel-to-mindmap" className="text-blue-600 dark:text-blue-400 hover:underline">View on GitHub</a></p>
+                                <p>Made with ❤️ for data visualization • <a href="https://github.com/serenaplin-jpg/sheet-2-mindmap" className="text-blue-600 dark:text-blue-400 hover:underline">View on GitHub</a></p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Upload View
+            if (currentView === 'upload') {
+                return (
+                    <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+                        <div className="max-w-md w-full p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+                            <div className="flex items-center justify-between mb-6">
+                                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                                    📁 Upload Excel File
+                                </h1>
+                                <button
+                                    onClick={() => setCurrentView('home')}
+                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                                >
+                                    ← Back
+                                </button>
+                            </div>
+                            
+                            <div
+                                className="file-upload-area mb-4"
+                                onDrop={handleDrop}
+                                onDragOver={handleDragOver}
+                            >
+                                <input
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    onChange={(e) => handleFileUpload(e.target.files[0])}
+                                    className="hidden"
+                                    id="file-input"
+                                />
+                                <label htmlFor="file-input" className="cursor-pointer">
+                                    <div className="text-gray-600 dark:text-gray-400">
+                                        <svg className="mx-auto h-12 w-12 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                        <p className="text-sm font-medium">Drop Excel file here or click to browse</p>
+                                        <p className="text-xs mt-1">Supports .xlsx and .xls files</p>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                                <p>✓ Your data stays private - everything runs in your browser</p>
+                                <p>✓ Option to save for future use</p>
+                                <p>✓ Supports multiple languages</p>
+                            </div>
+                            
+                            {isLoading && (
+                                <div className="text-center py-4">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                                    <p className="text-sm mt-2">Processing Excel file...</p>
+                                </div>
+                            )}
+                            
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-4">
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Saved Datasets View
+            if (currentView === 'saved') {
+                const allDatasets = [...BUILTIN_DATASETS, ...savedDatasets];
+                
+                return (
+                    <div className="w-full h-screen bg-gray-100 dark:bg-gray-900">
+                        <div className="max-w-6xl mx-auto p-6">
+                            <div className="flex items-center justify-between mb-8">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                                        💾 Saved Datasets
+                                    </h1>
+                                    <p className="text-gray-600 dark:text-gray-400">
+                                        Manage your saved datasets and built-in templates
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setCurrentView('home')}
+                                    className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                                >
+                                    ← Back to Home
+                                </button>
+                            </div>
+                            
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {allDatasets.map(dataset => (
+                                    <div key={dataset.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center">
+                                                    <h3 className="font-semibold text-gray-900 dark:text-white">{dataset.name}</h3>
+                                                    {dataset.isBuiltIn && (
+                                                        <span className="ml-2 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full">
+                                                            Built-in
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{dataset.description}</p>
+                                            </div>
+                                            {!dataset.isBuiltIn && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm(`Delete "${dataset.name}"?`)) {
+                                                            deleteSavedDataset(dataset.id);
+                                                            setSavedDatasets(getSavedDatasets());
+                                                        }
+                                                    }}
+                                                    className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 ml-2"
+                                                    title="Delete dataset"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                                        <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                                                    </svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                                                <span>{dataset.functions} functions</span>
+                                                <span>{dataset.countries.length} countries</span>
+                                            </div>
+                                            
+                                            {!dataset.isBuiltIn && dataset.uploadDate && (
+                                                <p className="text-xs text-gray-400 dark:text-gray-500">
+                                                    Uploaded: {new Date(dataset.uploadDate).toLocaleDateString()}
+                                                </p>
+                                            )}
+                                            
+                                            <button
+                                                onClick={() => dataset.isBuiltIn ? loadSampleDataset(dataset.url) : loadSavedDataset(dataset)}
+                                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            >
+                                                Open Dataset →
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {allDatasets.length === 0 && (
+                                    <div className="col-span-full text-center py-12 text-gray-500 dark:text-gray-400">
+                                        <p className="text-lg mb-2">No datasets saved yet</p>
+                                        <p>Upload an Excel file to get started!</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -941,10 +1213,10 @@
                                 </h1>
                                 <div className="flex items-center gap-3">
                                     <button
-                                        onClick={() => setCurrentView('upload')}
+                                        onClick={() => setCurrentView('home')}
                                         className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm"
                                     >
-                                        ← Back to Upload
+                                        ← Back to Home
                                     </button>
                                     <button
                                         onClick={addRow}
