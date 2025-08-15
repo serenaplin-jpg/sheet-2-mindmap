@@ -525,6 +525,10 @@
             const [error, setError] = useState('');
             const [searchShake, setSearchShake] = useState(false);
             const [currentView, setCurrentView] = useState('upload'); // 'upload', 'table', 'mindmap'
+            const [githubToken, setGithubToken] = useState(localStorage.getItem('github_token') || '');
+            const [isSaving, setIsSaving] = useState(false);
+            const [saveMessage, setSaveMessage] = useState('');
+            const [currentDatasetId, setCurrentDatasetId] = useState(null);
             const mindmapRef = useRef();
             
             const handleFileUpload = async (file) => {
@@ -581,12 +585,101 @@
                     
                     setRawData(jsonData);
                     setEditableData(JSON.parse(JSON.stringify(jsonData)));
+                    
+                    // Set current dataset ID for saving
+                    if (datasetUrl.includes('gmb-banking-functions.json')) {
+                        setCurrentDatasetId('gmb-banking');
+                    } else if (datasetUrl.includes('financial-services-template.json')) {
+                        setCurrentDatasetId('financial-template');
+                    }
+                    
                     setCurrentView('table');
                 } catch (err) {
                     setError('Sample dataset not available. Please upload your own Excel file.');
                 } finally {
                     setIsLoading(false);
                 }
+            };
+            
+            const saveToGitHub = async () => {
+                if (!githubToken) {
+                    setError('Please provide a GitHub Personal Access Token to save changes.');
+                    return;
+                }
+                
+                if (!currentDatasetId) {
+                    setError('Can only save changes to sample datasets loaded from GitHub.');
+                    return;
+                }
+                
+                setIsSaving(true);
+                setSaveMessage('');
+                setError('');
+                
+                try {
+                    // Determine the file path based on dataset ID
+                    const filePath = currentDatasetId === 'gmb-banking' 
+                        ? 'data/gmb-banking-functions.json'
+                        : 'data/financial-services-template.json';
+                    
+                    // Get current file to get SHA
+                    const getResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
+                        headers: {
+                            'Authorization': `token ${githubToken}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                        },
+                    });
+                    
+                    if (!getResponse.ok) {
+                        throw new Error('Failed to get current file information');
+                    }
+                    
+                    const fileInfo = await getResponse.json();
+                    
+                    // Prepare the updated content
+                    const content = btoa(JSON.stringify(editableData, null, 2));
+                    
+                    // Update the file
+                    const updateResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${githubToken}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: `Update ${currentDatasetId === 'gmb-banking' ? 'GMB Banking Functions' : 'Financial Services Template'} data`,
+                            content: content,
+                            sha: fileInfo.sha,
+                            branch: 'main'
+                        }),
+                    });
+                    
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(errorData.message || 'Failed to save to GitHub');
+                    }
+                    
+                    setSaveMessage('✅ Successfully saved to GitHub! Changes will be live in a few minutes.');
+                    
+                    // Update raw data to match what we just saved
+                    setRawData(JSON.parse(JSON.stringify(editableData)));
+                    
+                } catch (err) {
+                    setError(`Failed to save to GitHub: ${err.message}`);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+            
+            const handleTokenSave = (token) => {
+                setGithubToken(token);
+                localStorage.setItem('github_token', token);
+            };
+            
+            const clearToken = () => {
+                setGithubToken('');
+                localStorage.removeItem('github_token');
             };
             
             const generateMindmap = () => {
@@ -829,7 +922,7 @@
                     <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
                         {/* Header */}
                         <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 p-4">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between mb-4">
                                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">
                                     ✏️ Edit Your Data
                                 </h1>
@@ -854,6 +947,96 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            {/* GitHub Save Section */}
+                            {currentDatasetId && (
+                                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" className="mr-2 text-gray-600 dark:text-gray-400" viewBox="0 0 16 16">
+                                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                                            </svg>
+                                            <h3 className="font-medium text-gray-900 dark:text-white">Save to GitHub</h3>
+                                        </div>
+                                        {githubToken && (
+                                            <button
+                                                onClick={clearToken}
+                                                className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                            >
+                                                Clear Token
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    {!githubToken ? (
+                                        <div className="space-y-3">
+                                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                                                To save changes back to GitHub, you need a Personal Access Token.
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="password"
+                                                    placeholder="GitHub Personal Access Token"
+                                                    className="flex-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleTokenSave(e.target.value);
+                                                        }
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={(e) => {
+                                                        const input = e.target.previousElementSibling;
+                                                        if (input.value.trim()) {
+                                                            handleTokenSave(input.value.trim());
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm"
+                                                >
+                                                    Save Token
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                <a href="https://github.com/settings/tokens" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                                    Create a token here
+                                                </a> with "repo" permissions. Token is stored locally and never shared.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm text-green-600 dark:text-green-400">✓ Token configured</span>
+                                            <button
+                                                onClick={saveToGitHub}
+                                                disabled={isSaving}
+                                                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                            >
+                                                {isSaving ? (
+                                                    <>
+                                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                        </svg>
+                                                        Saving...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
+                                                            <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+                                                        </svg>
+                                                        Save to GitHub
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
+                                    
+                                    {saveMessage && (
+                                        <div className="mt-3 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md text-sm">
+                                            {saveMessage}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         
                         {/* Table Container */}
