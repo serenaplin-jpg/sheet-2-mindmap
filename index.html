@@ -601,7 +601,12 @@
                                 const savedDataset = saveUploadedDataset(jsonData, file.name);
                                 if (savedDataset) {
                                     setCurrentDatasetId(savedDataset.id);
+                                    // Add to savedDatasets immediately
+                                    setSavedDatasets(prev => [...prev, savedDataset]);
                                 }
+                            } else {
+                                // Create a temporary dataset ID for unsaved uploads
+                                setCurrentDatasetId(`temp_${Date.now()}`);
                             }
                             
                             navigateTo('table');
@@ -663,24 +668,31 @@
                 };
                 
                 return dataset;
-                return null;
             };
             
             const loadSavedDataset = async (dataset) => {
-                if (dataset.data) {
-                    // Dataset already has data loaded
-                    setRawData(dataset.data);
-                    setEditableData(JSON.parse(JSON.stringify(dataset.data)));
-                    setCurrentDatasetId(dataset.id);
-                    navigateTo('table');
-                } else if (dataset.downloadUrl) {
-                    // This is a GitHub dataset, load it from the URL
-                    try {
-                        setIsLoading(true);
-                        const response = await fetch(dataset.downloadUrl, {
+                setIsLoading(true);
+                setError('');
+                
+                try {
+                    if (dataset.data) {
+                        // Dataset already has data loaded
+                        setRawData(dataset.data);
+                        setEditableData(JSON.parse(JSON.stringify(dataset.data)));
+                        setCurrentDatasetId(dataset.id);
+                        navigateTo('table');
+                    } else if (dataset.downloadUrl) {
+                        // This is a GitHub dataset, load it from the URL
+                        // Force refresh with cache-busting
+                        const cacheBuster = `v=${Date.now()}&r=${Math.random()}`;
+                        const urlWithCacheBuster = `${dataset.downloadUrl}?${cacheBuster}`;
+                        
+                        const response = await fetch(urlWithCacheBuster, {
                             cache: 'no-cache',
                             headers: {
-                                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                'Pragma': 'no-cache',
+                                'Expires': '0'
                             }
                         });
                         
@@ -693,13 +705,13 @@
                         setEditableData(JSON.parse(JSON.stringify(data)));
                         setCurrentDatasetId(dataset.id);
                         navigateTo('table');
-                    } catch (err) {
-                        setError(`Failed to load dataset: ${err.message}`);
-                    } finally {
-                        setIsLoading(false);
+                    } else {
+                        setError('Dataset data not available');
                     }
-                } else {
-                    setError('Dataset data not available');
+                } catch (err) {
+                    setError(`Failed to load dataset: ${err.message}`);
+                } finally {
+                    setIsLoading(false);
                 }
             };
 
@@ -729,8 +741,8 @@
                     setRawData(jsonData);
                     setEditableData(JSON.parse(JSON.stringify(jsonData)));
                     
-                    // Set current dataset ID for saving
-                    setCurrentDatasetId('gmb-banking');
+                    // Set current dataset ID for saving - use the actual dataset name
+                    setCurrentDatasetId('github_gmb-banking-functions');
                     
                     navigateTo('table');
                 } catch (err) {
@@ -763,10 +775,14 @@
                     
                     for (const filename of dataFilesToCheck) {
                         try {
-                            const response = await fetch(`./data/${filename}`, {
+                            // Force refresh with multiple cache-busting parameters
+                            const cacheBuster = `v=${Date.now()}&r=${Math.random()}&cb=${performance.now()}`;
+                            const response = await fetch(`./data/${filename}?${cacheBuster}`, {
                                 cache: 'no-cache',
                                 headers: {
-                                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                    'Pragma': 'no-cache',
+                                    'Expires': '0'
                                 }
                             });
                             
@@ -809,14 +825,18 @@
                                     functions: functionCount,
                                     data: jsonData, // Store the actual data instead of a URL
                                     isBuiltIn: false,
-                                    githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/data/${filename}`
+                                    githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/data/${filename}`,
+                                    lastUpdated: Date.now() // Track when we last fetched this
                                 };
                                 
-                                // Check if already exists in knownDatasets
-                                if (!knownDatasets.find(d => d.id === dataset.id)) {
-                                    knownDatasets.push(dataset);
-                                    console.log(`Discovered dataset: ${name} with ${functionCount} functions`);
+                                // Check if already exists in knownDatasets and update or add
+                                const existingIndex = knownDatasets.findIndex(d => d.id === dataset.id);
+                                if (existingIndex >= 0) {
+                                    knownDatasets[existingIndex] = dataset; // Update existing
+                                } else {
+                                    knownDatasets.push(dataset); // Add new
                                 }
+                                console.log(`Discovered dataset: ${name} with ${functionCount} functions`);
                             }
                         } catch (fileErr) {
                             console.log(`Could not load ${filename}:`, fileErr.message);
@@ -850,12 +870,16 @@
                 try {
                     // Determine the correct file path based on dataset ID
                     let filePath;
-                    if (currentDatasetId === 'gmb-banking') {
+                    if (currentDatasetId === 'github_gmb-banking-functions') {
                         filePath = 'data/gmb-banking-functions.json';
                     } else if (currentDatasetId.startsWith('github_')) {
                         // Extract filename from github dataset ID
                         const filename = currentDatasetId.replace('github_', '') + '.json';
                         filePath = `data/${filename}`;
+                    } else if (currentDatasetId.startsWith('uploaded_') || currentDatasetId.startsWith('temp_')) {
+                        // For uploaded datasets, prompt to save as new
+                        setError('This is an uploaded dataset. Use "Save as New Dataset" to save it to GitHub.');
+                        return;
                     } else {
                         setError('This dataset cannot be saved to GitHub. Only GitHub-hosted datasets can be updated.');
                         return;
@@ -1469,9 +1493,23 @@
                         {/* Header */}
                         <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 p-4">
                             <div className="flex items-center justify-between mb-4">
-                                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                                    ✏️ Edit Your Data
-                                </h1>
+                                <div>
+                                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                                        ✏️ Edit Your Data
+                                    </h1>
+                                    {currentDatasetId && (
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                            {currentDatasetId.startsWith('github_') 
+                                                ? `GitHub Dataset: ${currentDatasetId.replace('github_', '').replace(/-/g, ' ')}`
+                                                : currentDatasetId.startsWith('uploaded_')
+                                                ? 'Uploaded Dataset (not saved to GitHub)'
+                                                : currentDatasetId.startsWith('temp_')
+                                                ? 'Temporary Dataset (not saved)'
+                                                : 'Current Dataset'
+                                            }
+                                        </p>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-3">
                                     <button
                                         onClick={() => navigateTo('home')}
@@ -1494,8 +1532,8 @@
                                 </div>
                             </div>
                             
-                            {/* GitHub Save Section */}
-                            {currentDatasetId && (
+                            {/* GitHub Save Section - Only show for valid datasets */}
+                            {(currentDatasetId && currentDatasetId !== 'temp_' && !currentDatasetId.startsWith('temp_')) && (
                                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center">
@@ -1517,7 +1555,10 @@
                                     {!githubToken ? (
                                         <div className="space-y-3">
                                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                                                To save changes back to GitHub, you need a Personal Access Token.
+                                                {currentDatasetId.startsWith('uploaded_') || currentDatasetId.startsWith('temp_') 
+                                                    ? 'To save your uploaded dataset to GitHub, you need a Personal Access Token.'
+                                                    : 'To save changes back to GitHub, you need a Personal Access Token.'
+                                                }
                                             </p>
                                             <div className="flex gap-2">
                                                 <input
@@ -1551,28 +1592,34 @@
                                     ) : (
                                         <div className="flex items-center gap-3">
                                             <span className="text-sm text-green-600 dark:text-green-400">✓ Token configured</span>
-                                            <button
-                                                onClick={saveToGitHub}
-                                                disabled={isSaving}
-                                                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                                            >
-                                                {isSaving ? (
-                                                    <>
-                                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                        </svg>
-                                                        Saving...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
-                                                            <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
-                                                        </svg>
-                                                        Save to GitHub
-                                                    </>
-                                                )}
-                                            </button>
+                                            {(currentDatasetId.startsWith('github_')) ? (
+                                                <button
+                                                    onClick={saveToGitHub}
+                                                    disabled={isSaving}
+                                                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                >
+                                                    {isSaving ? (
+                                                        <>
+                                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                            </svg>
+                                                            Updating...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
+                                                                <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+                                                            </svg>
+                                                            Update on GitHub
+                                                        </>
+                                                    )}
+                                                </button>
+                                            ) : (
+                                                <span className="text-sm text-blue-600 dark:text-blue-400">
+                                                    ℹ️ Use "Save as New Dataset" below to save uploaded data
+                                                </span>
+                                            )}
                                         </div>
                                     )}
                                     
@@ -1582,56 +1629,75 @@
                                         </div>
                                     )}
                                     
-                                    {/* Save as New Dataset Section */}
-                                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                        <h4 className="font-medium text-gray-900 dark:text-white mb-2">Save as New Dataset</h4>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Enter dataset name"
-                                                value={customDatasetName}
-                                                onChange={(e) => setCustomDatasetName(e.target.value)}
-                                                className="flex-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && customDatasetName.trim()) {
-                                                        saveNewDatasetToGitHub(customDatasetName.trim());
+                                    {/* Save as New Dataset Section - Always visible when token is available */}
+                                    {githubToken && (
+                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+                                                {currentDatasetId.startsWith('uploaded_') || currentDatasetId.startsWith('temp_') 
+                                                    ? 'Save Uploaded Dataset to GitHub' 
+                                                    : 'Save as New Dataset'
+                                                }
+                                            </h4>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter dataset name"
+                                                    value={customDatasetName}
+                                                    onChange={(e) => setCustomDatasetName(e.target.value)}
+                                                    className="flex-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && customDatasetName.trim()) {
+                                                            saveNewDatasetToGitHub(customDatasetName.trim());
+                                                        }
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => saveNewDatasetToGitHub(customDatasetName.trim())}
+                                                    disabled={isSaving || !customDatasetName.trim()}
+                                                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {isSaving ? 'Saving...' : 'Save New'}
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                This will create a new JSON file in your GitHub repository.
+                                            </p>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Refresh Data Button - Only for GitHub datasets */}
+                                    {currentDatasetId.startsWith('github_') && (
+                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                            <button
+                                                onClick={() => {
+                                                    // Find the current dataset and reload it
+                                                    const dataset = [...savedDatasets].find(d => d.id === currentDatasetId);
+                                                    if (dataset) {
+                                                        loadSavedDataset(dataset);
+                                                    } else if (currentDatasetId.startsWith('github_')) {
+                                                        // Try to reload from GitHub
+                                                        loadDatasetsFromGitHub().then(() => {
+                                                            const refreshedDataset = savedDatasets.find(d => d.id === currentDatasetId);
+                                                            if (refreshedDataset) {
+                                                                loadSavedDataset(refreshedDataset);
+                                                            } else {
+                                                                setError('Cannot refresh: dataset not found on GitHub.');
+                                                            }
+                                                        });
+                                                    } else {
+                                                        setError('Cannot refresh: this is a temporary dataset. Save it to GitHub first.');
                                                     }
                                                 }}
-                                            />
-                                            <button
-                                                onClick={() => saveNewDatasetToGitHub(customDatasetName.trim())}
-                                                disabled={isSaving || !customDatasetName.trim()}
-                                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                                             >
-                                                {isSaving ? 'Saving...' : 'Save New'}
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
+                                                    <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                                                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                                                </svg>
+                                                Refresh Data from GitHub
                                             </button>
                                         </div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            This will create a new JSON file in your GitHub repository.
-                                        </p>
-                                    </div>
-                                    
-                                    {/* Refresh Data Button */}
-                                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                        <button
-                                            onClick={() => {
-                                                // Find the current dataset and reload it
-                                                const dataset = [...savedDatasets].find(d => d.id === currentDatasetId);
-                                                if (dataset) {
-                                                    loadSavedDataset(dataset);
-                                                } else {
-                                                    setError('Cannot refresh: original dataset not found.');
-                                                }
-                                            }}
-                                            className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
-                                                <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                                                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-                                            </svg>
-                                            Refresh Data from GitHub
-                                        </button>
-                                    </div>
+                                    )}
                                 </div>
                             )}
                         </div>
