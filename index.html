@@ -727,11 +727,7 @@
                     setEditableData(JSON.parse(JSON.stringify(jsonData)));
                     
                     // Set current dataset ID for saving
-                    if (datasetUrl.includes('gmb-banking-functions.json')) {
-                        setCurrentDatasetId('gmb-banking');
-                    } else if (datasetUrl.includes('financial-services-template.json')) {
-                        setCurrentDatasetId('financial-template');
-                    }
+                    setCurrentDatasetId('gmb-banking');
                     
                     navigateTo('table');
                 } catch (err) {
@@ -757,10 +753,13 @@
                 setError('');
                 
                 try {
-                    // Determine the file path based on dataset ID
-                    const filePath = currentDatasetId === 'gmb-banking' 
-                        ? 'data/gmb-banking-functions.json'
-                        : 'data/financial-services-template.json';
+                    // Only allow saving to GMB banking dataset
+                    if (currentDatasetId !== 'gmb-banking') {
+                        setError('Can only save changes to the GMB Banking Functions dataset.');
+                        return;
+                    }
+                    
+                    const filePath = 'data/gmb-banking-functions.json';
                     
                     // Get current file to get SHA
                     const getResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
@@ -789,7 +788,7 @@
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            message: `Update ${currentDatasetId === 'gmb-banking' ? 'GMB Banking Functions' : 'Financial Services Template'} data`,
+                            message: `Update GMB Banking Functions data`,
                             content: content,
                             sha: fileInfo.sha,
                             branch: 'main'
@@ -1355,7 +1354,7 @@
                                             onClick={() => {
                                                 const currentDatasetUrl = currentDatasetId === 'gmb-banking' 
                                                     ? './data/gmb-banking-functions.json'
-                                                    : './data/financial-services-template.json';
+                                                    : './data/gmb-banking-functions.json';
                                                 loadSampleDataset(currentDatasetUrl);
                                             }}
                                             className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
