@@ -577,7 +577,19 @@
                 setError('');
                 
                 try {
-                    const response = await fetch(datasetUrl);
+                    // Add cache-busting parameter to always fetch fresh data
+                    const cacheBuster = new Date().getTime();
+                    const urlWithCacheBuster = `${datasetUrl}?v=${cacheBuster}`;
+                    
+                    const response = await fetch(urlWithCacheBuster, {
+                        cache: 'no-cache',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        }
+                    });
+                    
                     if (!response.ok) {
                         throw new Error('Failed to load sample dataset');
                     }
@@ -1036,6 +1048,25 @@
                                             {saveMessage}
                                         </div>
                                     )}
+                                    
+                                    {/* Refresh Data Button */}
+                                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <button
+                                            onClick={() => {
+                                                const currentDatasetUrl = currentDatasetId === 'gmb-banking' 
+                                                    ? './data/gmb-banking-functions.json'
+                                                    : './data/financial-services-template.json';
+                                                loadSampleDataset(currentDatasetUrl);
+                                            }}
+                                            className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="mr-2" viewBox="0 0 16 16">
+                                                <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                                                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                                            </svg>
+                                            Refresh Data from GitHub
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
