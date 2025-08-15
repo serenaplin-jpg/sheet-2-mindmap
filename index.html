@@ -1092,6 +1092,8 @@
                 if (!editableData || editableData.length < 2) return [];
                 
                 const headers = editableData[0];
+                if (!headers) return [];
+                
                 const excludePatterns = ['name', 'category', '大項', '細項', 'sub-item', 'platform', '平台', '功能名稱'];
                 
                 return headers
@@ -1444,6 +1446,24 @@
             
             // Table View
             if (currentView === 'table') {
+                // Add safety check for editableData
+                if (!editableData || !editableData[0]) {
+                    return (
+                        <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+                            <div className="text-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                                <p className="text-gray-600 dark:text-gray-400">Loading data...</p>
+                                <button 
+                                    onClick={() => navigateTo('home')} 
+                                    className="mt-4 px-4 py-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                >
+                                    ← Back to Home
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+                
                 return (
                     <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
                         {/* Header */}
@@ -1595,10 +1615,13 @@
                                     <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                                         <button
                                             onClick={() => {
-                                                const currentDatasetUrl = currentDatasetId === 'gmb-banking' 
-                                                    ? './data/gmb-banking-functions.json'
-                                                    : './data/gmb-banking-functions.json';
-                                                loadSampleDataset(currentDatasetUrl);
+                                                // Find the current dataset and reload it
+                                                const dataset = [...savedDatasets].find(d => d.id === currentDatasetId);
+                                                if (dataset) {
+                                                    loadSavedDataset(dataset);
+                                                } else {
+                                                    setError('Cannot refresh: original dataset not found.');
+                                                }
                                             }}
                                             className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                                         >
@@ -1711,6 +1734,26 @@
             }
             
             // Mindmap View
+            if (currentView === 'mindmap') {
+                // Add safety check for mindmapData
+                if (!mindmapData || !countries.length) {
+                    return (
+                        <div className="w-full h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+                            <div className="text-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                                <p className="text-gray-600 dark:text-gray-400">Generating mindmap...</p>
+                                <button 
+                                    onClick={() => navigateTo('home')} 
+                                    className="mt-4 px-4 py-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                >
+                                    ← Back to Home
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+            }
+            
             return (
                 <div className="relative w-full h-screen bg-gray-100 dark:bg-gray-900">
                     {/* Control Panel */}
