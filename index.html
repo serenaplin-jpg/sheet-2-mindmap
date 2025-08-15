@@ -518,7 +518,7 @@
             const getInitialView = () => {
                 // Check for hash routing first (from 404 redirects)
                 const hash = window.location.hash.replace('#', '');
-                if (hash) {
+                if (hash && hash !== '') {
                     switch (hash) {
                         case 'upload': return 'upload';
                         case 'saved': return 'saved';
@@ -545,22 +545,33 @@
             // Navigation function that updates both state and URL
             const navigateTo = (view) => {
                 setCurrentView(view);
-                const path = view === 'home' ? '/sheet-2-mindmap/' : `/sheet-2-mindmap/${view}`;
-                window.history.pushState({}, '', path);
+                // Only update URL if it's actually changing to avoid unnecessary history entries
+                const currentPath = window.location.pathname;
+                const newPath = view === 'home' ? '/sheet-2-mindmap/' : `/sheet-2-mindmap/${view}`;
+                
+                if (currentPath !== newPath) {
+                    window.history.pushState({}, '', newPath);
+                }
             };
             
             // Handle browser back/forward buttons
             useEffect(() => {
                 const handlePopState = () => {
-                    setCurrentView(getInitialView());
+                    const newView = getInitialView();
+                    if (newView !== currentView) {
+                        setCurrentView(newView);
+                    }
                 };
                 window.addEventListener('popstate', handlePopState);
                 return () => window.removeEventListener('popstate', handlePopState);
-            }, []);
+            }, [currentView]);
             
             // Load datasets from GitHub when component mounts
             useEffect(() => {
-                loadDatasetsFromGitHub();
+                // Only load if we don't already have datasets
+                if (savedDatasets.length === 0) {
+                    loadDatasetsFromGitHub();
+                }
             }, []);
             
             const [githubToken, setGithubToken] = useState(localStorage.getItem('github_token') || '');
@@ -754,7 +765,16 @@
             
             const loadDatasetsFromGitHub = async () => {
                 console.log('loadDatasetsFromGitHub called - discovering datasets');
+                
+                // Prevent multiple simultaneous calls
+                if (isLoading) {
+                    console.log('Already loading, skipping...');
+                    return;
+                }
+                
                 setIsLoading(true);
+                setError('');
+                
                 try {
                     const knownDatasets = [];
                     
@@ -769,25 +789,17 @@
                         knownDatasets.push(...window.currentSessionDatasets);
                     }
                     
-                    // Try to discover all JSON files in the data directory
+                    // Try to discover JSON files in the data directory - only check known files
                     const dataFilesToCheck = [
                         'gmb-banking-functions.json',
                         'abc.json',
                         'abc1.json'
-                        // Add more as needed
+                        // Add more specific files here as needed
                     ];
-                    
-                    // Try to auto-discover additional JSON files by checking for common patterns
-                    const additionalFiles = [];
-                    for (let i = 1; i <= 10; i++) {
-                        additionalFiles.push(`dataset${i}.json`);
-                        additionalFiles.push(`data${i}.json`);
-                        additionalFiles.push(`functions${i}.json`);
-                    }
-                    dataFilesToCheck.push(...additionalFiles);
                     
                     console.log('Checking for datasets:', dataFilesToCheck);
                     
+                    let foundFiles = 0;
                     for (const filename of dataFilesToCheck) {
                         try {
                             // Force refresh with multiple cache-busting parameters
@@ -806,6 +818,7 @@
                             console.log(`Response for ${filename}:`, response.status);
                             
                             if (response.ok) {
+                                foundFiles++;
                                 const jsonData = await response.json();
                                 console.log(`Successfully loaded ${filename}:`, jsonData.length, 'rows');
                                 
@@ -867,10 +880,11 @@
                     }
                     
                     setSavedDatasets(knownDatasets);
-                    console.log('Total datasets found:', knownDatasets.length);
+                    console.log(`Total datasets found: ${knownDatasets.length} (${foundFiles} files loaded)`);
                     
                 } catch (err) {
                     console.log('Error loading datasets:', err.message);
+                    setError(`Failed to load datasets: ${err.message}`);
                     setSavedDatasets([]);
                 } finally {
                     setIsLoading(false);
