@@ -1,0 +1,27 @@
+大項 (Category),細項 (Sub-item),2.0功能名稱 (Function Name),平台 (Platform),台灣 (Taiwan),大陸 (Mainland China),香港 (Hong Kong),柬埔寨 (Cambodia),新加坡 (Singapore),越南 (Vietnam),菲律賓 (Philippines),馬來西亞 (Malaysia),緬甸 (Myanmar),寮國 (Laos)
+存款查詢 (Deposit Inquiry),交易明細查詢 (Transaction Details Inquiry),交易明細查詢,Web/App,√,√,√,√,√,√,√,√,√,√
+,帳戶餘額查詢 (Account Balance Inquiry),帳戶餘額查詢,Web,√,√,√,√,√,√,√,√,√,√
+,存款歸戶查詢 (Deposit Allocation Inquiry),存款歸戶查詢,Web,√,√,√,√,√,√,√,√,√,√
+,綜存整合查詢 (Comprehensive Deposit Inquiry),綜存整合查詢,Web,√,×,×,×,×,×,×,×,×,×
+,定存存單查詢 (Fixed Deposit Certificate Inquiry),定存存單查詢,Web,√,√,√,√,√,√,√,√,√,√
+,匯入匯款查詢 (Incoming Remittance Inquiry),匯入匯款查詢,Web,√,×,√,×,√,×,×,×,×,×
+,外匯收支或交易申報書 (Foreign Exchange Receipts/Payments or Transaction Declaration),外匯收支或交易申報書,Web,√,×,×,×,×,×,×,×,×,×
+,電子回單 (Electronic Receipt),電子回單,Web,×,√,×,×,×,×,×,×,×,×
+,外匯水單與還款收據查詢 (Foreign Exchange Draft and Repayment Receipt Inquiry),外匯水單與還款收據查詢,Web,√,×,×,×,×,×,×,×,×,×
+票據查詢 (Bill Inquiry),支存應補票據查詢 (Deposit Supplement Bill Inquiry),支存應補票據查詢,Web,√,×,×,×,×,×,×,×,×,×
+,託收票據查詢 (Collection Bill Inquiry),託收票據查詢,Web,√,×,×,×,×,×,×,×,×,×
+,光票託收查詢 (Clean Bill Collection Inquiry),光票託收查詢,Web,√,×,×,×,×,×,×,×,×,×
+放款查詢 (Loan Inquiry),放款資料查詢 (Loan Information Inquiry),放款資料查詢,Web,√,√,√,√,√,√,√,√,√,√
+,放款歸戶查詢 (Loan Allocation Inquiry),放款歸戶查詢,Web,√,√,√,√,√,√,√,√,√,√
+,開票紀錄建檔 (Invoice Record Filing),開票紀錄建檔,Web,√,×,×,×,×,×,×,×,×,×
+帳戶查詢 (Account Inquiry),開票異常註記 (Invoice Abnormal Marking),開票異常註記,Web,√,×,×,×,×,×,×,×,×,×
+,支存兌付查詢 (Deposit Redemption Inquiry),支存兌付查詢,Web,√,×,×,×,×,×,×,×,×,×
+,供應商收款明細查詢 (Supplier Payment Detail Inquiry),供應商收款明細查詢,Web,√,×,×,×,×,×,×,×,×,×
+,銀企對帳 (Bank-Enterprise Reconciliation),銀企對帳,Web,×,√,×,×,×,×,×,×,×,×
+,直銷商與即時入金銷帳 (Direct Sales Merchant Real-Time Cash-In Ledger),直銷商與即時入金銷帳製作,Web,√,×,×,×,×,×,×,×,×,×
+,累計交易手續費查詢 (Cumulative Transaction Fee Inquiry),累計交易手續費查詢,Web,×,×,×,×,×,×,×,×,×,×
+,結構性存款交易查詢 (Structured Deposit Transaction Inquiry),結構性存款交易查詢,Web,×,√,×,×,×,×,×,×,×,×
+,越南電子發票 (Vietnam Electronic Invoice),越南電子發票,Web,×,×,×,×,×,√,×,×,×,×
+,特定日期餘額查詢 (Specific Date Balance Inquiry),特定日期餘額查詢,Web,√,×,×,×,×,×,×,×,×,×
+,通知存款查詢 (Notice Deposit Inquiry),通知存款查詢,Web,×,√,×,×,×,×,×,×,×,×
+,信貸貿回單查詢 (Trade Credit Return Slip Inquiry),信貸貿回單查詢,Web,×,√,×,×,×,×,×,×,×,×
