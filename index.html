@@ -105,7 +105,7 @@
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-cache-buster="v1.0.1">
         const { useState, useEffect, useRef, useCallback } = React;
 
         // Built-in datasets configuration
@@ -708,6 +708,7 @@
             };
             
             const loadDatasetsFromGitHub = async () => {
+                console.log('loadDatasetsFromGitHub called - setting empty array');
                 try {
                     // For now, we'll start with an empty list since we can't reliably fetch repository contents
                     // Users can still save new datasets, and they'll appear in the list
@@ -717,7 +718,7 @@
                     // such as maintaining a dataset index file or using GitHub's GraphQL API with authentication
                     
                 } catch (err) {
-                    console.error('Failed to load datasets from GitHub:', err);
+                    // No error handling needed since we're not making API calls
                     setSavedDatasets([]);
                 }
             };
