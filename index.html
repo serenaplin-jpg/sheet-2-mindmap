@@ -593,6 +593,8 @@
             const [isSaving, setIsSaving] = useState(false);
             const [saveMessage, setSaveMessage] = useState('');
             const [currentDatasetId, setCurrentDatasetId] = useState(null);
+            const [showSaveDialog, setShowSaveDialog] = useState(false);
+            const [customDatasetName, setCustomDatasetName] = useState('');
             const mindmapRef = useRef();
             
             const handleFileUpload = async (file) => {
@@ -807,6 +809,94 @@
                     
                 } catch (err) {
                     setError(`Failed to save to GitHub: ${err.message}`);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+            
+            const saveNewDatasetToGitHub = async (datasetName) => {
+                if (!githubToken) {
+                    setError('Please provide a GitHub Personal Access Token to save new datasets.');
+                    return;
+                }
+                
+                if (!datasetName || datasetName.trim() === '') {
+                    setError('Please provide a name for your dataset.');
+                    return;
+                }
+                
+                setIsSaving(true);
+                setSaveMessage('');
+                setError('');
+                
+                try {
+                    // Create a safe filename
+                    const safeName = datasetName.trim()
+                        .replace(/[^a-zA-Z0-9\s-_]/g, '') // Remove special characters
+                        .replace(/\s+/g, '-') // Replace spaces with hyphens
+                        .toLowerCase();
+                    
+                    const filePath = `data/${safeName}.json`;
+                    
+                    // Check if file already exists
+                    const checkResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
+                        headers: {
+                            'Authorization': `token ${githubToken}`,
+                            'Accept': 'application/vnd.github.v3+json`,
+                        },
+                    });
+                    
+                    if (checkResponse.ok) {
+                        setError(`A dataset with the name "${datasetName}" already exists. Please choose a different name.`);
+                        setIsSaving(false);
+                        return;
+                    }
+                    
+                    // Prepare the content with proper UTF-8 encoding
+                    const jsonString = JSON.stringify(editableData, null, 2);
+                    const content = btoa(unescape(encodeURIComponent(jsonString)));
+                    
+                    // Create the new file
+                    const createResponse = await fetch(`https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/${filePath}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${githubToken}`,
+                            'Accept': 'application/vnd.github.v3+json`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: `Add new dataset: ${datasetName}`,
+                            content: content,
+                            branch: 'main'
+                        }),
+                    });
+                    
+                    if (!createResponse.ok) {
+                        const errorData = await createResponse.json();
+                        throw new Error(errorData.message || 'Failed to create new dataset on GitHub');
+                    }
+                    
+                    setSaveMessage(`✅ Successfully created new dataset "${datasetName}" on GitHub! It will be available in a few minutes.`);
+                    
+                    // Save to localStorage as well
+                    const newDataset = {
+                        id: `github_${safeName}`,
+                        name: datasetName,
+                        description: `Dataset saved to GitHub with ${editableData.length - 1} functions`,
+                        countries: getCountryColumns().map(col => col.header),
+                        functions: editableData.length - 1,
+                        data: editableData,
+                        uploadDate: new Date().toISOString(),
+                        isBuiltIn: false,
+                        githubUrl: `https://github.com/serenaplin-jpg/sheet-2-mindmap/blob/main/${filePath}`
+                    };
+                    
+                    if (saveDatasetToStorage(newDataset)) {
+                        setSavedDatasets(getSavedDatasets());
+                    }
+                    
+                } catch (err) {
+                    setError(`Failed to create new dataset on GitHub: ${err.message}`);
                 } finally {
                     setIsSaving(false);
                 }
@@ -1347,6 +1437,35 @@
                                             {saveMessage}
                                         </div>
                                     )}
+                                    
+                                    {/* Save as New Dataset Section */}
+                                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                        <h4 className="font-medium text-gray-900 dark:text-white mb-2">Save as New Dataset</h4>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Enter dataset name"
+                                                value={customDatasetName}
+                                                onChange={(e) => setCustomDatasetName(e.target.value)}
+                                                className="flex-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && customDatasetName.trim()) {
+                                                        saveNewDatasetToGitHub(customDatasetName.trim());
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => saveNewDatasetToGitHub(customDatasetName.trim())}
+                                                disabled={isSaving || !customDatasetName.trim()}
+                                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isSaving ? 'Saving...' : 'Save New'}
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            This will create a new JSON file in your GitHub repository.
+                                        </p>
+                                    </div>
                                     
                                     {/* Refresh Data Button */}
                                     <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
