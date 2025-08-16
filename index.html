@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Excel to Mindmap Converter - Free Interactive Data Visualization</title>
     
     <!-- SEO Meta Tags -->
@@ -107,6 +110,35 @@
 
     <script type="text/babel" data-cache-buster="v1.0.1">
         const { useState, useEffect, useRef, useCallback } = React;
+
+        // URL Routing - Get initial view from URL hash
+        const getInitialView = () => {
+            // Use hash routing as primary method
+            const hash = window.location.hash.replace('#', '');
+            if (hash && hash !== '') {
+                switch (hash) {
+                    case 'upload': return 'upload';
+                    case 'saved': return 'saved';
+                    case 'table': return 'table';
+                    case 'mindmap': return 'mindmap';
+                    default: return 'home';
+                }
+            }
+            
+            // Fallback to path-based routing for legacy URLs
+            const path = window.location.pathname.replace('/sheet-2-mindmap', '').replace(/^\/+|\/+$/g, '');
+            if (path && path !== '') {
+                switch (path) {
+                    case 'upload': return 'upload';
+                    case 'saved': return 'saved';
+                    case 'table': return 'table';
+                    case 'mindmap': return 'mindmap';
+                    default: return 'home';
+                }
+            }
+            
+            return 'home';
+        };
 
         // Built-in datasets configuration
         const BUILTIN_DATASETS = [];
@@ -514,56 +546,47 @@
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState('');
             const [searchShake, setSearchShake] = useState(false);
-            // URL Routing - Get initial view from URL path
-            const getInitialView = () => {
-                // Check for hash routing first (from 404 redirects)
-                const hash = window.location.hash.replace('#', '');
-                if (hash && hash !== '') {
-                    switch (hash) {
-                        case 'upload': return 'upload';
-                        case 'saved': return 'saved';
-                        case 'table': return 'table';
-                        case 'mindmap': return 'mindmap';
-                        default: return 'home';
-                    }
-                }
-                
-                // Fallback to path-based routing
-                const path = window.location.pathname.replace('/sheet-2-mindmap', '').replace(/^\/+|\/+$/g, '');
-                switch (path) {
-                    case 'upload': return 'upload';
-                    case 'saved': return 'saved';
-                    case 'table': return 'table';
-                    case 'mindmap': return 'mindmap';
-                    default: return 'home';
-                }
-            };
             
-            const [currentView, setCurrentView] = useState(getInitialView()); // 'home', 'upload', 'saved', 'table', 'mindmap'
+            const [currentView, setCurrentView] = useState(() => {
+                // Initialize with proper route detection
+                return getInitialView();
+            });
             const [savedDatasets, setSavedDatasets] = useState([]);
             
-            // Navigation function that updates both state and URL
+            // Navigation function that updates both state and URL hash
             const navigateTo = (view) => {
                 setCurrentView(view);
-                // Only update URL if it's actually changing to avoid unnecessary history entries
-                const currentPath = window.location.pathname;
-                const newPath = view === 'home' ? '/sheet-2-mindmap/' : `/sheet-2-mindmap/${view}`;
+                // Use hash-based routing
+                const newHash = view === 'home' ? '' : view;
                 
-                if (currentPath !== newPath) {
-                    window.history.pushState({}, '', newPath);
+                if (window.location.hash.replace('#', '') !== newHash) {
+                    if (newHash === '') {
+                        // For home, clear the hash
+                        window.history.pushState({}, '', window.location.pathname);
+                    } else {
+                        // For other views, set the hash
+                        window.history.pushState({}, '', `${window.location.pathname}#${newHash}`);
+                    }
                 }
             };
             
-            // Handle browser back/forward buttons
+            // Handle browser back/forward buttons and hash changes
             useEffect(() => {
-                const handlePopState = () => {
+                const handleNavigation = () => {
                     const newView = getInitialView();
                     if (newView !== currentView) {
                         setCurrentView(newView);
                     }
                 };
-                window.addEventListener('popstate', handlePopState);
-                return () => window.removeEventListener('popstate', handlePopState);
+                
+                // Listen to both popstate and hashchange events
+                window.addEventListener('popstate', handleNavigation);
+                window.addEventListener('hashchange', handleNavigation);
+                
+                return () => {
+                    window.removeEventListener('popstate', handleNavigation);
+                    window.removeEventListener('hashchange', handleNavigation);
+                };
             }, [currentView]);
             
             // Load datasets from GitHub when component mounts
@@ -789,15 +812,50 @@
                         knownDatasets.push(...window.currentSessionDatasets);
                     }
                     
-                    // Try to discover JSON files in the data directory - only check known files
-                    const dataFilesToCheck = [
-                        'gmb-banking-functions.json',
-                        'abc.json',
-                        'abc1.json'
-                        // Add more specific files here as needed
-                    ];
+                    // Dynamically discover JSON files from GitHub repository
+                    let dataFilesToCheck = [];
                     
-                    console.log('Checking for datasets:', dataFilesToCheck);
+                    try {
+                        console.log('Fetching file list from GitHub API...');
+                        // Use GitHub API to list files in the data directory
+                        const repoApiUrl = 'https://api.github.com/repos/serenaplin-jpg/sheet-2-mindmap/contents/data';
+                        const apiResponse = await fetch(repoApiUrl, {
+                            cache: 'no-cache',
+                            headers: {
+                                'Accept': 'application/vnd.github.v3+json',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                'User-Agent': 'sheet-2-mindmap-app'
+                            }
+                        });
+                        
+                        if (apiResponse.ok) {
+                            const files = await apiResponse.json();
+                            // Filter for JSON files only
+                            dataFilesToCheck = files
+                                .filter(file => file.type === 'file' && file.name.endsWith('.json'))
+                                .map(file => file.name)
+                                .sort(); // Sort alphabetically
+                            console.log('Discovered JSON files from GitHub:', dataFilesToCheck);
+                        } else if (apiResponse.status === 403) {
+                            // Handle rate limiting
+                            const rateLimitReset = apiResponse.headers.get('X-RateLimit-Reset');
+                            const resetTime = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000).toLocaleTimeString() : 'later';
+                            throw new Error(`GitHub API rate limit exceeded. Try again at ${resetTime}`);
+                        } else {
+                            throw new Error(`GitHub API returned ${apiResponse.status}: ${apiResponse.statusText}`);
+                        }
+                    } catch (apiError) {
+                        console.log('GitHub API failed, using fallback list:', apiError.message);
+                        // Fallback to known files if GitHub API fails
+                        dataFilesToCheck = [
+                            'gmb-banking-functions.json',
+                            'abc.json',
+                            'abc1.json',
+                            'abcd.json'
+                        ];
+                    }
+                    
+                    console.log('Final file list to check:', dataFilesToCheck);
                     
                     let foundFiles = 0;
                     for (const filename of dataFilesToCheck) {
@@ -882,9 +940,16 @@
                     setSavedDatasets(knownDatasets);
                     console.log(`Total datasets found: ${knownDatasets.length} (${foundFiles} files loaded)`);
                     
+                    // Show success message indicating source
+                    if (dataFilesToCheck.length > 4) {
+                        console.log('✅ Used GitHub API for dynamic file discovery');
+                    } else {
+                        console.log('⚠️ Used fallback file list (GitHub API unavailable)');
+                    }
+                    
                 } catch (err) {
                     console.log('Error loading datasets:', err.message);
-                    setError(`Failed to load datasets: ${err.message}`);
+                    setError(`Failed to load datasets: ${err.message}. GitHub API may be unavailable.`);
                     setSavedDatasets([]);
                 } finally {
                     setIsLoading(false);
