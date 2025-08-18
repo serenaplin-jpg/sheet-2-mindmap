@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Excel to Mindmap Testing</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .mindmap-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .mindmap-node:hover {
+            stroke-width: 3px;
+        }
+        .mindmap-link {
+            stroke: #999;
+            stroke-width: 2px;
+            fill: none;
+        }
+        .mindmap-text {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-weight: 500;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+        }
+        .search-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+            overflow-x: auto;
+        }
+        
+        .table-container table {
+            min-width: 100%;
+            white-space: nowrap;
+        }
+        
+        .table-container th,
+        .table-container td {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mindmap-container {
+            height: 600px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const App = () => {
+            const [excelData, setExcelData] = useState(null);
+            const [mindmapData, setMindmapData] = useState(null);
+            const [countries, setCountries] = useState([]);
+            const [selectedCountries, setSelectedCountries] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchShake, setSearchShake] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [error, setError] = useState('');
+            const mindmapRef = useRef();
+
+            // Auto-load testing.xlsx on component mount
+            useEffect(() => {
+                // Try to automatically load testing.xlsx
+                const autoLoadExcel = async () => {
+                    try {
+                        console.log('Attempting to auto-load testing.xlsx...');
+                        console.log('Current URL:', window.location.href);
+                        console.log('Protocol:', window.location.protocol);
+                        
+                        // Method 1: Try to fetch the file directly
+                        const response = await fetch('./testing.xlsx');
+                        if (response.ok) {
+                            console.log('✅ File found and loaded successfully!');
+                            const arrayBuffer = await response.arrayBuffer();
+                            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                            
+                            // Get the first sheet
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            
+                            // Convert to JSON
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            
+                            if (jsonData.length < 2) {
+                                throw new Error('Excel file must have at least a header row and one data row.');
+                            }
+                            
+                            setExcelData(jsonData);
+                            
+                            // Transform to mindmap format
+                            const result = transformToMindmapFormat(jsonData);
+                            setMindmapData(result.data);
+                            setCountries(result.countries);
+                            setSelectedCountries([result.countries[0] || '', result.countries[1] || '']);
+                            
+                            console.log('🎉 Mindmap created successfully!');
+                            return;
+                        } else {
+                            console.log('❌ File not found, status:', response.status);
+                        }
+                    } catch (err) {
+                        console.log('❌ Auto-load failed:', err.message);
+                        
+                        // Check if it's a CORS issue
+                        if (err.message.includes('CORS') || err.message.includes('Failed to fetch')) {
+                            console.log('🚫 CORS issue detected - file needs to be served from a web server');
+                        }
+                    }
+                    
+                    // If auto-load fails, show file input
+                    console.log('📁 Showing manual file input');
+                    setIsLoading(false);
+                };
+                
+                // Try auto-load first
+                autoLoadExcel();
+                
+            }, []);
+
+            const loadLocalExcel = async (file) => {
+                try {
+                    console.log('Loading Excel file:', file.name);
+                    setIsLoading(true);
+                    setError('');
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            console.log('File read successfully, processing...');
+                            const arrayBuffer = e.target.result;
+                            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                            
+                            // Get the first sheet
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            
+                            console.log('Sheet loaded:', firstSheetName);
+                            
+                            // Convert to JSON
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            
+                            console.log('Data converted, rows:', jsonData.length);
+                            
+                            if (jsonData.length < 2) {
+                                throw new Error('Excel file must have at least a header row and one data row.');
+                            }
+                            
+                            setExcelData(jsonData);
+                            
+                            // Transform to mindmap format
+                            const result = transformToMindmapFormat(jsonData);
+                            setMindmapData(result.data);
+                            setCountries(result.countries);
+                            setSelectedCountries([result.countries[0] || '', result.countries[1] || '']);
+                            
+                            console.log('Mindmap created successfully');
+                            
+                        } catch (err) {
+                            console.error('Error processing file:', err);
+                            setError(err.message);
+                        } finally {
+                            console.log('Setting loading to false');
+                            setIsLoading(false);
+                        }
+                    };
+                    
+                    reader.onerror = (err) => {
+                        console.error('FileReader error:', err);
+                        setError('Failed to read the file');
+                        setIsLoading(false);
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                    
+                } catch (err) {
+                    console.error('Error in loadLocalExcel:', err);
+                    setError(err.message);
+                    setIsLoading(false);
+                }
+            };
+
+            const handleFileChange = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    loadLocalExcel(file);
+                }
+            };
+
+            const transformToMindmapFormat = (data) => {
+                if (!data || data.length < 2) {
+                    throw new Error('Invalid data format');
+                }
+
+                const headers = data[0];
+                const rows = data.slice(1);
+                
+                // Find key columns
+                const nameColIndex = headers.findIndex(h => 
+                    h && (h.toString().includes('功能名稱') || h.toString().includes('Function Name') || h.toString().includes('Name'))
+                );
+                const categoryColIndex = headers.findIndex(h => 
+                    h && (h.toString().includes('大項') || h.toString().includes('Category'))
+                );
+                
+                if (nameColIndex === -1) {
+                    throw new Error('Could not find function name column. Please ensure your Excel has a column with "功能名稱" or "Function Name".');
+                }
+
+                console.log('Column indices:', { nameColIndex, categoryColIndex });
+                console.log('Headers:', headers);
+
+                // Find country columns (exclude name, category, platform columns)
+                const excludePatterns = ['name', 'category', '大項', '細項', 'sub-item', 'platform', '平台', '功能名稱'];
+                
+                // Also explicitly exclude the platform column
+                const platformColIndex = headers.findIndex(h => 
+                    h && (h.toString().includes('平台') || h.toString().includes('Platform'))
+                );
+                
+                const countryColumns = headers
+                    .map((header, index) => ({ header: header?.toString() || `Column${index}`, index }))
+                    .filter(col => {
+                        if (!col.header) return false;
+                        if (col.index === platformColIndex) return false; // Explicitly exclude platform column
+                        
+                        const headerLower = col.header.toLowerCase();
+                        const isExcluded = excludePatterns.some(pattern => 
+                            headerLower.includes(pattern.toLowerCase()) || 
+                            col.header.includes(pattern)
+                        );
+                        return !isExcluded && col.header.trim() !== '';
+                    });
+
+                console.log('Country columns found:', countryColumns);
+                console.log('Excluded columns:', headers.filter((h, i) => !countryColumns.find(c => c.index === i)));
+
+                // Group by category
+                const categories = {};
+                let currentCategory = null;
+
+                rows.forEach(row => {
+                    if (!row || row.length === 0) return;
+                    
+                    const name = row[nameColIndex];
+                    const category = row[categoryColIndex]?.toString() || '';
+                    
+                    console.log('Processing row:', { name, category, row });
+                    
+                    // Update category if we have a new one (non-blank)
+                    if (category && category.trim()) {
+                        currentCategory = category;
+                        console.log('New category:', currentCategory);
+                    }
+                    
+                    // Skip rows without any category context (these are usually header rows)
+                    if (!currentCategory) {
+                        console.log('Skipping row - no category context available');
+                        return;
+                    }
+                    
+                    // Only add rows that have a function name (skip completely empty rows)
+                    if (!name || name.toString().trim() === '') {
+                        console.log('Skipping row - no function name');
+                        return;
+                    }
+                    
+                    // Include rows even if function name is blank (platform info might still be useful)
+                    if (!categories[currentCategory]) {
+                        categories[currentCategory] = [];
+                    }
+                    
+                    // Create availability object
+                    const availability = {};
+                    countryColumns.forEach(col => {
+                        const value = row[col.index];
+                        if (value === '√' || value === 'V' || value === 'v') {
+                            availability[col.header] = true;
+                        } else if (value === '×' || value === 'X' || value === 'x') {
+                            availability[col.header] = false;
+                        }
+                    });
+                    
+                    // Use function name if available, otherwise use a placeholder
+                    const displayName = name.toString().trim();
+                    
+                    console.log('Adding to mindmap:', { displayName, availability, category: currentCategory });
+                    
+                    categories[currentCategory].push({
+                        name: displayName,
+                        availability: availability
+                    });
+                });
+
+                // Convert to mindmap format
+                const mindmapData = {
+                    name: 'Root',
+                    children: Object.entries(categories).map(([category, functions]) => ({
+                        name: category,
+                        children: functions.map(func => ({
+                            name: func.name,
+                            availability: func.availability
+                        }))
+                    }))
+                };
+
+                const countryNames = countryColumns.map(col => col.header);
+
+                return {
+                    data: mindmapData,
+                    countries: countryNames
+                };
+            };
+
+            const handleCountryChange = (index, country) => {
+                const newSelected = [...selectedCountries];
+                newSelected[index] = country;
+                setSelectedCountries(newSelected);
+            };
+
+            const handleSearch = () => {
+                if (!searchTerm.trim()) return;
+                
+                // Check if search term exists in data
+                let found = false;
+                if (mindmapData) {
+                    const checkNode = (node) => {
+                        if (node.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+                            found = true;
+                            return;
+                        }
+                        if (node.children) {
+                            node.children.forEach(checkNode);
+                        }
+                    };
+                    checkNode(mindmapData);
+                }
+                
+                if (!found) {
+                    setSearchShake(true);
+                    setTimeout(() => setSearchShake(false), 500);
+                }
+            };
+
+            const getAllFunctionNames = (node, names = []) => {
+                if (node.availability) {
+                    names.push(node.name);
+                }
+                if (node.children) {
+                    node.children.forEach(child => getAllFunctionNames(child, names));
+                }
+                return names;
+            };
+
+            const functionNames = mindmapData ? getAllFunctionNames(mindmapData) : [];
+
+            // Process Excel data for table display with proper category inheritance
+            const getProcessedTableData = () => {
+                if (!excelData || excelData.length < 2) return excelData;
+                
+                const headers = excelData[0];
+                const rows = excelData.slice(1);
+                const processedRows = [];
+                let currentCategory = '';
+                
+                rows.forEach(row => {
+                    const category = row[0]?.toString() || '';
+                    if (category && category.trim()) {
+                        currentCategory = category;
+                    }
+                    
+                    // Create a new row with inherited category
+                    const processedRow = [...row];
+                    if (currentCategory && (!category || !category.trim())) {
+                        processedRow[0] = currentCategory; // Set inherited category
+                    }
+                    
+                    processedRows.push(processedRow);
+                });
+                
+                return [headers, ...processedRows];
+            };
+
+            const processedTableData = getProcessedTableData();
+
+            if (isLoading) {
+                return (
+                    <div className="w-full h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                            <p className="text-lg text-gray-600">Processing Excel file...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="w-full h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="max-w-md w-full p-6">
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                                <strong className="font-bold">Error:</strong>
+                                <span className="block sm:inline"> {error}</span>
+                            </div>
+                            <button 
+                                onClick={() => setError('')}
+                                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!excelData) {
+                return (
+                    <div className="w-full h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="max-w-md w-full p-6">
+                            <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+                                <h1 className="text-3xl font-bold text-gray-900 mb-6">
+                                    🧠 Excel to Mindmap Converter
+                                </h1>
+                                <p className="text-gray-600 mb-6">
+                                    Select your Excel file to get started
+                                </p>
+                                <div className="space-y-4">
+                                    <button
+                                        onClick={() => document.getElementById('fileInput').click()}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                                    >
+                                        📁 Select Excel File
+                                    </button>
+                                    <input
+                                        id="fileInput"
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Supported formats: .xlsx, .xls
+                                    </p>
+                                                                    <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                                    <p className="text-sm text-blue-700">
+                                        💡 <strong>Quick Start:</strong> Click the button above to select your Excel file
+                                    </p>
+                                </div>
+                                
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="w-full min-h-screen bg-gray-100 p-4">
+                    <div className="max-w-7xl mx-auto">
+                        {/* Header */}
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+                                🧠 Excel to Mindmap Converter
+                            </h1>
+                            <p className="text-lg text-gray-600">
+                                Interactive visualization of your Excel data
+                            </p>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                            <div className="grid md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Country 1
+                                    </label>
+                                    <select
+                                        value={selectedCountries[0] || ''}
+                                        onChange={(e) => handleCountryChange(0, e.target.value)}
+                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                    >
+                                        <option value="">Select Country</option>
+                                        {countries.map(country => (
+                                            <option key={country} value={country}>
+                                                {country}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Country 2
+                                    </label>
+                                    <select
+                                        value={selectedCountries[1] || ''}
+                                        onChange={(e) => handleCountryChange(1, e.target.value)}
+                                        className="w-full p-2 border border-gray-300 rounded-md"
+                                    >
+                                        <option value="">Select Country</option>
+                                        {countries.map(country => (
+                                            <option key={country} value={country}>
+                                                {country}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Search Functions
+                                    </label>
+                                    <div className="flex">
+                                        <input
+                                            type="text"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                                            placeholder="Search function names..."
+                                            className={`flex-1 p-2 border border-gray-300 rounded-l-md ${searchShake ? 'search-shake' : ''}`}
+                                        />
+                                        <button
+                                            onClick={handleSearch}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md"
+                                        >
+                                            🔍
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Color Legend */}
+                            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                                <h3 className="text-sm font-semibold text-gray-700 mb-3">🎨 Color Legend</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 rounded-full bg-green-500"></div>
+                                        <span>Available (√)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 rounded-full bg-red-500"></div>
+                                        <span>Not Available (×)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+                                        <span>Mixed (One Available)</span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-4 h-4 rounded-full bg-gray-300"></div>
+                                        <span>No Data</span>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-600 mt-2">
+                                    💡 <strong>Tip:</strong> Colors change based on your selected countries. Select countries above to see availability differences.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Content Layout - Mindmap on top, Table below */}
+                        <div className="space-y-6">
+                            {/* Mindmap */}
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-2xl font-bold text-gray-900 mb-4">🧠 Interactive Mindmap</h2>
+                                <div className="mindmap-container">
+                                    {mindmapData && (
+                                        <D3Mindmap
+                                            ref={mindmapRef}
+                                            data={mindmapData}
+                                            selectedCountries={selectedCountries}
+                                            searchTerm={searchTerm}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Excel Table */}
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-2xl font-bold text-gray-900 mb-4">📊 Excel Data Table</h2>
+                                <div className="table-container">
+                                    <table className="w-full border-collapse border border-gray-300 text-xs">
+                                        <thead>
+                                            <tr className="bg-gray-100">
+                                                {excelData[0].map((header, index) => (
+                                                    <th key={index} className="border border-gray-300 p-1 text-left font-semibold text-xs">
+                                                        {header || `Column ${index + 1}`}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {processedTableData.slice(1).map((row, rowIndex) => (
+                                                <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                    {row.map((cell, cellIndex) => (
+                                                        <td key={cellIndex} className="border border-gray-300 p-1 text-xs">
+                                                            {cell || ''}
+                                                        </td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Statistics */}
+                        <div className="bg-white rounded-lg shadow-lg p-6 mt-6">
+                            <h2 className="text-2xl font-bold text-gray-900 mb-4">📈 Statistics</h2>
+                            <div className="grid md:grid-cols-4 gap-4">
+                                <div className="text-center">
+                                    <div className="text-3xl font-bold text-blue-600">{countries.length}</div>
+                                    <div className="text-sm text-gray-600">Countries</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-3xl font-bold text-green-600">{functionNames.length}</div>
+                                    <div className="text-sm text-gray-600">Total Functions</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-3xl font-bold text-purple-600">
+                                        {mindmapData ? mindmapData.children.length : 0}
+                                    </div>
+                                    <div className="text-sm text-gray-600">Categories</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-3xl font-bold text-orange-600">
+                                        {selectedCountries.filter(c => c).length}
+                                    </div>
+                                    <div className="text-sm text-gray-600">Selected Countries</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const D3Mindmap = React.forwardRef(({ data, selectedCountries, searchTerm }, ref) => {
+            const svgRef = useRef();
+            const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+            const expandAll = useCallback(() => {
+                if (svgRef.current) {
+                    const svg = d3.select(svgRef.current);
+                    svg.selectAll('.mindmap-node').style('opacity', 1);
+                    svg.selectAll('.mindmap-link').style('opacity', 1);
+                }
+            }, []);
+
+            const collapseAll = useCallback(() => {
+                if (svgRef.current) {
+                    const svg = d3.select(svgRef.current);
+                    svg.selectAll('.mindmap-node').style('opacity', 0.3);
+                    svg.selectAll('.mindmap-link').style('opacity', 0.3);
+                }
+            }, []);
+
+            const centerView = useCallback(() => {
+                if (svgRef.current) {
+                    const svg = d3.select(svgRef.current);
+                    svg.transition().duration(750).call(
+                        d3.zoom().transform,
+                        d3.zoomIdentity
+                    );
+                }
+            }, []);
+
+            React.useImperativeHandle(ref, () => ({
+                expandAll,
+                collapseAll,
+                centerView
+            }));
+
+            useEffect(() => {
+                if (!data || !svgRef.current) return;
+
+                const container = svgRef.current.parentElement;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                
+                // Only update dimensions if they actually changed
+                if (dimensions.width !== width || dimensions.height !== height) {
+                    setDimensions({ width, height });
+                }
+
+                // Clear previous content
+                d3.select(svgRef.current).selectAll("*").remove();
+
+                const svg = d3.select(svgRef.current)
+                    .attr('width', width)
+                    .attr('height', height);
+
+                // Create zoom behavior
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 3])
+                    .on('zoom', (event) => {
+                        svg.select('g').attr('transform', event.transform);
+                    });
+
+                svg.call(zoom);
+
+                // Create main group
+                const g = svg.append('g');
+
+                // Create hierarchy
+                const root = d3.hierarchy(data);
+                
+                // Set up tree layout with much larger spacing
+                const treeLayout = d3.tree()
+                    .size([height - 80, width - 80]) // Reduced size for much larger spacing
+                    .separation((a, b) => (a.parent === b.parent ? 3 : 4)); // Much larger separation between nodes
+
+                treeLayout(root);
+
+                // Create links
+                const links = g.selectAll('.mindmap-link')
+                    .data(root.links())
+                    .enter().append('path')
+                    .attr('class', 'mindmap-link')
+                    .attr('d', d3.linkHorizontal()
+                        .x(d => d.y)
+                        .y(d => d.x)
+                    );
+
+                // Create nodes
+                const nodes = g.selectAll('.mindmap-node')
+                    .data(root.descendants())
+                    .enter().append('g')
+                    .attr('class', 'mindmap-node')
+                    .attr('transform', d => `translate(${d.y},${d.x})`);
+
+                // Add circles to nodes
+                nodes.append('circle')
+                    .attr('r', d => d.children ? 8 : 6)
+                    .attr('fill', d => {
+                        if (!d.data.availability) return '#e5e7eb';
+                        
+                        const country1 = selectedCountries[0];
+                        const country2 = selectedCountries[1];
+                        
+                        if (country1 && country2) {
+                            const available1 = d.data.availability[country1];
+                            const available2 = d.data.availability[country2];
+                            
+                            if (available1 && available2) return '#10b981'; // Both available
+                            if (available1 || available2) return '#f59e0b'; // One available
+                            return '#ef4444'; // Neither available
+                        } else if (country1) {
+                            return d.data.availability[country1] ? '#10b981' : '#ef4444';
+                        } else if (country2) {
+                            return d.data.availability[country2] ? '#10b981' : '#ef4444';
+                        }
+                        
+                        return '#e5e7eb';
+                    })
+                    .attr('stroke', '#374151')
+                    .attr('stroke-width', 2);
+
+                // Add labels positioned beside the nodes
+                nodes.append('text')
+                    .attr('class', 'mindmap-text')
+                    .attr('dy', '0.35em') // Center text vertically with the node
+                    .attr('x', d => d.children ? 12 : 12) // Position text to the right of the node
+                    .attr('text-anchor', 'start') // Left-align text
+                    .attr('font-size', d => d.children ? '14px' : '12px')
+                    .attr('font-weight', d => d.children ? 'bold' : 'normal')
+                    .attr('fill', '#374151')
+                    .text(d => d.data.name)
+                    .style('pointer-events', 'none'); // Prevent text from interfering with clicks
+
+                // Handle search highlighting
+                if (searchTerm) {
+                    const searchLower = searchTerm.toLowerCase();
+                    nodes.each(function(d) {
+                        const node = d3.select(this);
+                        if (d.data.name.toLowerCase().includes(searchLower)) {
+                            node.select('circle').attr('stroke', '#f59e0b').attr('stroke-width', 4);
+                            node.select('text').attr('font-weight', 'bold').attr('fill', '#f59e0b');
+                        }
+                    });
+                }
+
+                // Add click handlers for expand/collapse
+                nodes.filter(d => d.children).on('click', (event, d) => {
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    } else {
+                        d.children = d._children;
+                        d._children = null;
+                    }
+                    
+                    // Redraw
+                    treeLayout(root);
+                    
+                    links.attr('d', d3.linkHorizontal()
+                        .x(d => d.y)
+                        .y(d => d.x)
+                    );
+                    
+                    nodes.attr('transform', d => `translate(${d.y},${d.x})`);
+                });
+
+            }, [data, selectedCountries, searchTerm]); // Removed 'dimensions' from dependencies
+
+            return (
+                <svg 
+                    ref={svgRef} 
+                    className="w-full h-full"
+                    style={{ minHeight: '500px' }}
+                />
+            );
+        });
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
